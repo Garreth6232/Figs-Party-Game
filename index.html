@@ -65,6 +65,7 @@
             </div>
             <div class="menu-actions">
               <button id="startBtn" class="primary" type="button" autofocus>Start Run</button>
+              <button id="menuLeaderboardBtn" class="secondary" type="button">Leaderboard</button>
             </div>
           </div>
         </section>
@@ -123,6 +124,40 @@
             <p id="gameOverMessage">You reached lane 0.</p>
             <div class="menu-actions">
               <button id="restartBtn" class="primary" type="button">Play Again</button>
+              <button id="gameOverLeaderboardBtn" class="secondary" type="button">Leaderboard</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="initialsScreen" class="overlay hidden" aria-labelledby="initialsTitle" aria-hidden="true">
+          <div class="card small" role="dialog" aria-modal="true">
+            <h2 id="initialsTitle">New High Score!</h2>
+            <p>Your score: <strong id="initialsScoreValue">0</strong></p>
+            <p>Enter your arcade initials (3 letters).</p>
+            <input
+              id="initialsInput"
+              class="text-input initials-input"
+              type="text"
+              maxlength="3"
+              inputmode="text"
+              autocapitalize="characters"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Enter initials"
+            />
+            <p id="initialsHint" class="hint-text">Enter your 3-letter arcade initials.</p>
+            <div class="menu-actions">
+              <button id="initialsSaveBtn" class="primary" type="button" disabled>Save Score</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="leaderboardScreen" class="overlay hidden" aria-labelledby="leaderboardTitle" aria-hidden="true">
+          <div class="card small" role="dialog" aria-modal="true">
+            <h2 id="leaderboardTitle">Top 10 Arcade Board</h2>
+            <div id="leaderboardRows" class="leaderboard-rows" aria-live="polite"></div>
+            <div class="menu-actions">
+              <button id="closeLeaderboardBtn" class="primary" type="button">Back</button>
             </div>
           </div>
         </section>

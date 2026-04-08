@@ -1,17 +1,17 @@
 {
   "player": {
-    "figForward": "assets/player/figForward.svg",
-    "figLeft": "assets/player/figLeft.svg",
-    "figRight": "assets/player/figRight.svg",
+    "figForward": "assets/player/figForward.png",
+    "figLeft": "assets/player/figLeft.png",
+    "figRight": "assets/player/figRight.png",
     "figBack": "assets/player/figBack.svg"
   },
   "vehicles": {
-    "car1": "assets/vehicles/car1.svg",
+    "car1": "assets/vehicles/car1.png",
     "car2": "assets/vehicles/car2.svg",
     "car3": "assets/vehicles/car3.svg",
     "bike1": "assets/vehicles/bike1.svg",
     "scooter1": "assets/vehicles/scooter1.svg",
-    "maxTrain": "assets/vehicles/maxTrain.svg"
+    "maxTrain": "assets/vehicles/maxTrain.png"
   },
   "hazards": {
     "log1": "assets/hazards/log1.svg",
@@ -19,7 +19,7 @@
     "kayak1": "assets/hazards/kayak1.svg"
   },
   "collectibles": {
-    "coin": "assets/collectibles/coin.svg"
+    "coin": "assets/collectibles/coin.png"
   },
   "environment": {
     "riverTile": "assets/environment/riverTile.svg",
