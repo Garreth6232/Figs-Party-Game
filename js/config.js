@@ -428,9 +428,13 @@ export const GAME_CONFIG = {
     snapToPixels: true,
     overlapPx: 1,
     grass: {
-      stripHeightRatio: 0.56,
-      stripDriftSpeed: 0.02,
-      grainAlpha: 0.08
+      baseScale: 1.8,
+      detailScale: 1.25,
+      detailOffsetX: 0.37,
+      detailOffsetY: 0.61,
+      tonalAlpha: 0.05,
+      undulationFreq: 0.0028,
+      undulationAlpha: 0.025
     },
     water: {
       tileHeightRatio: 0.9,
@@ -439,19 +443,16 @@ export const GAME_CONFIG = {
     },
     rail: {
       ballastHeightRatio: 0.82,
-      tieCount: 8,
+      tieGapRatio: 0.64,
+      tieWidthRatio: 0.2,
       trackGaugeRatio: 0.36
     }
   },
   coinVisuals: {
     bobAmplitudeRatio: 0.05,
     bobFrequencyHz: 5.2,
-    glowAlpha: 0.2,
-    glowRadiusRatio: 0.22,
     shadowAlpha: 0.22,
-    shadowOffsetRatio: 0.12,
-    rimAlpha: 0.32,
-    rimWidthPx: 2
+    shadowOffsetRatio: 0.12
   },
   laneWeights: [
     { type: 'grass', weight: 2.2 },
