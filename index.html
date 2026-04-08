@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Neon Hopper Rush</title>
+    <meta
+      name="description"
+      content="Neon Hopper Rush is an original endless arcade lane-dodger built for fast restarts and game feel."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles/main.css" />
+  </head>
+  <body>
+    <div class="game-shell">
+      <header class="hud">
+        <div class="brand">
+          <h1>Neon Hopper Rush</h1>
+          <p>Endless lane survival</p>
+        </div>
+        <div class="stats">
+          <div><span>Score</span><strong id="scoreValue">0</strong></div>
+          <div><span>Best</span><strong id="bestValue">0</strong></div>
+          <button id="muteBtn" class="icon-btn" aria-label="Toggle sound">🔊</button>
+        </div>
+      </header>
+
+      <main class="canvas-wrap">
+        <canvas id="gameCanvas" width="900" height="1400" aria-label="Game canvas"></canvas>
+
+        <section id="startScreen" class="overlay show">
+          <div class="card">
+            <h2>Hop. Dodge. Survive.</h2>
+            <p>
+              Move across dangerous lanes, thread near-misses, and push your high score. Keyboard and touch supported.
+            </p>
+            <div class="controls-list">
+              <p><kbd>WASD</kbd> / <kbd>Arrows</kbd> to move</p>
+              <p><kbd>P</kbd> or <kbd>Esc</kbd> to pause</p>
+            </div>
+            <button id="startBtn" class="primary">Start Run</button>
+          </div>
+        </section>
+
+        <section id="pauseScreen" class="overlay hidden">
+          <div class="card small">
+            <h2>Paused</h2>
+            <p>Take a breath. Press <kbd>P</kbd> to continue.</p>
+            <button id="resumeBtn" class="primary">Resume</button>
+          </div>
+        </section>
+
+        <section id="gameOverScreen" class="overlay hidden">
+          <div class="card">
+            <h2>Run Over</h2>
+            <p id="gameOverMessage">You reached lane 0.</p>
+            <button id="restartBtn" class="primary">Play Again</button>
+          </div>
+        </section>
+      </main>
+
+      <nav class="touch-controls" aria-label="Touch controls">
+        <button data-dir="up">▲</button>
+        <div class="middle-row">
+          <button data-dir="left">◀</button>
+          <button data-dir="down">▼</button>
+          <button data-dir="right">▶</button>
+        </div>
+      </nav>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>

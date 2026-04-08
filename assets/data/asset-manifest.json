@@ -1,0 +1,17 @@
+{
+  "images": {
+    "player": "assets/images/player-placeholder.svg",
+    "vehicle": "assets/images/vehicle-placeholder.svg",
+    "log": "assets/images/log-placeholder.svg"
+  },
+  "audio": {
+    "hop": "assets/audio/hop.wav",
+    "hit": "assets/audio/hit.wav",
+    "score": "assets/audio/score.wav",
+    "ui": "assets/audio/ui.wav"
+  },
+  "notes": {
+    "swapInstructions": "Replace files while keeping keys the same, or update js/config.js ASSET_PATHS values.",
+    "recommendedSpriteSize": "128x128 player, 192x96 vehicles, 224x72 logs"
+  }
+}
