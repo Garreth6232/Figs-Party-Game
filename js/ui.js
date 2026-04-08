@@ -11,6 +11,7 @@ export class UIController {
     this.startBtn = document.getElementById('startBtn');
     this.resumeBtn = document.getElementById('resumeBtn');
     this.restartBtn = document.getElementById('restartBtn');
+    this.overlays = [this.startScreen, this.pauseScreen, this.gameOverScreen];
     this.scorePopTimer = null;
     this.bestPopTimer = null;
   }
@@ -41,25 +42,30 @@ export class UIController {
   }
 
   hideAllOverlays() {
-    this.startScreen.classList.add('hidden');
-    this.pauseScreen.classList.add('hidden');
-    this.gameOverScreen.classList.add('hidden');
+    this.overlays.forEach((overlay) => {
+      overlay.classList.add('hidden');
+      overlay.setAttribute('aria-hidden', 'true');
+    });
   }
 
   showStart() {
     this.hideAllOverlays();
     this.startScreen.classList.remove('hidden');
+    this.startScreen.setAttribute('aria-hidden', 'false');
     this.startBtn?.focus();
   }
 
   showPause(show) {
     this.pauseScreen.classList.toggle('hidden', !show);
+    this.pauseScreen.setAttribute('aria-hidden', String(!show));
     if (show) this.resumeBtn?.focus();
   }
 
   showGameOver(score, message) {
+    this.hideAllOverlays();
     this.messageEl.textContent = `${message} Final score: ${score}.`;
     this.gameOverScreen.classList.remove('hidden');
+    this.gameOverScreen.setAttribute('aria-hidden', 'false');
     this.restartBtn?.focus();
   }
 }

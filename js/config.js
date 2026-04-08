@@ -1,12 +1,24 @@
 export const STORAGE_KEYS = {
-  bestScore: 'neon_hopper_best',
-  muted: 'neon_hopper_muted'
+  bestScore: 'fig_game_best',
+  muted: 'fig_game_muted'
+};
+
+export const GAME_STATES = {
+  MENU: 'menu',
+  PLAYING: 'playing',
+  PAUSED: 'paused',
+  GAME_OVER: 'game_over'
 };
 
 export const ASSET_PATHS = {
   manifest: 'assets/data/asset-manifest.json',
   images: {
-    player: 'assets/images/player-placeholder.svg',
+    playerSprites: {
+      forward: 'assets/images/player-forward.svg',
+      left: 'assets/images/player-left.svg',
+      right: 'assets/images/player-right.svg',
+      back: 'assets/images/player-back.svg'
+    },
     vehicle: 'assets/images/vehicle-placeholder.svg',
     log: 'assets/images/log-placeholder.svg'
   },
@@ -30,16 +42,17 @@ export const GAME_CONFIG = {
   screenShakeDecay: 0.88,
   screenShakeMax: 11,
   particleLifetime: 0.4,
+  rainAmount: 90,
   lanePalette: {
-    grass: '#14532d',
-    road: '#1f2937',
-    water: '#0c4a6e',
-    rail: '#3f3f46'
+    grass: '#425942',
+    road: '#4c5660',
+    water: '#546a7b',
+    rail: '#646c55'
   },
   laneWeights: [
-    { type: 'grass', weight: 2.5 },
-    { type: 'road', weight: 3.9 },
-    { type: 'water', weight: 2.4 },
-    { type: 'rail', weight: 1.2 }
+    { type: 'grass', weight: 2.2 },
+    { type: 'road', weight: 4.0 },
+    { type: 'water', weight: 2.0 },
+    { type: 'rail', weight: 1.25 }
   ]
 };
