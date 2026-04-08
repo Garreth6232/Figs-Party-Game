@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Neon Hopper Rush</title>
+    <title>Fig Game</title>
     <meta
       name="description"
-      content="Neon Hopper Rush is an original endless arcade lane-dodger built for fast restarts and game feel."
+      content="Fig Game is a Portland-themed endless arcade lane-dodger built for fast restarts and game feel."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -20,8 +20,8 @@
     <div class="game-shell">
       <header class="hud" role="banner">
         <div class="brand">
-          <h1>Neon Hopper Rush</h1>
-          <p>Endless lane survival</p>
+          <h1>Fig Game</h1>
+          <p>Portland arcade survival</p>
         </div>
 
         <div class="stats" aria-label="Game stats">
@@ -40,16 +40,16 @@
       <main class="canvas-wrap" aria-label="Game board">
         <canvas id="gameCanvas" width="900" height="1400" aria-label="Game canvas"></canvas>
 
-        <section id="startScreen" class="overlay show" aria-labelledby="startTitle">
+        <section id="startScreen" class="overlay show" aria-labelledby="startTitle" aria-hidden="false">
           <div class="card" role="dialog" aria-modal="true">
-            <h2 id="startTitle">Hop. Dodge. Survive.</h2>
+            <h2 id="startTitle">Welcome to Fig Game</h2>
             <p>
-              Move across dangerous lanes, thread near-misses, and push your high score. Keyboard and touch supported.
+              Dash through rainy Portland streets, bike lanes, and MAX tracks. Keyboard and touch supported.
             </p>
             <div class="controls-list" aria-label="Controls">
               <p><kbd>WASD</kbd> / <kbd>Arrows</kbd> to move</p>
               <p><kbd>P</kbd> or <kbd>Esc</kbd> to pause</p>
-              <p class="hint">Tip: Near-miss road traffic for bonus points.</p>
+              <p class="hint">Tip: Thread close to traffic for bonus points.</p>
             </div>
             <div class="menu-actions">
               <button id="startBtn" class="primary" type="button" autofocus>Start Run</button>
@@ -57,7 +57,7 @@
           </div>
         </section>
 
-        <section id="pauseScreen" class="overlay hidden" aria-labelledby="pauseTitle">
+        <section id="pauseScreen" class="overlay hidden" aria-labelledby="pauseTitle" aria-hidden="true">
           <div class="card small" role="dialog" aria-modal="true">
             <h2 id="pauseTitle">Paused</h2>
             <p>Take a breath. Press <kbd>P</kbd> to continue.</p>
@@ -67,7 +67,7 @@
           </div>
         </section>
 
-        <section id="gameOverScreen" class="overlay hidden" aria-labelledby="gameOverTitle">
+        <section id="gameOverScreen" class="overlay hidden" aria-labelledby="gameOverTitle" aria-hidden="true">
           <div class="card" role="dialog" aria-modal="true">
             <h2 id="gameOverTitle">Run Over</h2>
             <p id="gameOverMessage">You reached lane 0.</p>

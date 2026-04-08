@@ -1,6 +1,11 @@
 {
   "images": {
-    "player": "assets/images/player-placeholder.svg",
+    "playerSprites": {
+      "forward": "assets/images/player-forward.svg",
+      "left": "assets/images/player-left.svg",
+      "right": "assets/images/player-right.svg",
+      "back": "assets/images/player-back.svg"
+    },
     "vehicle": "assets/images/vehicle-placeholder.svg",
     "log": "assets/images/log-placeholder.svg"
   },
@@ -12,6 +17,6 @@
   },
   "notes": {
     "swapInstructions": "Replace files while keeping keys the same, or update js/config.js ASSET_PATHS values.",
-    "recommendedSpriteSize": "128x128 player, 192x96 vehicles, 224x72 logs"
+    "recommendedSpriteSize": "128x128 player sprites per direction, 192x96 vehicles, 224x72 hazards"
   }
 }
