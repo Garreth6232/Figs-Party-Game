@@ -78,6 +78,7 @@ export class Game {
       sidewalkTile: ASSET_MANIFEST.environment.sidewalkTile,
       tree1: ASSET_MANIFEST.environment.tree1,
       foodCart: ASSET_MANIFEST.environment.foodCart,
+      benson1: ASSET_MANIFEST.environment.benson1,
       coin: ASSET_MANIFEST.collectibles.coin
     };
 
@@ -950,6 +951,117 @@ export class Game {
     }
   }
 
+  drawGrassLane({ lane, laneY, laneHeight, laneIndex }) {
+    const ctx = this.ctx;
+    const grassTile = this.environmentSprites.grassTile;
+    const grassStyle = GAME_CONFIG.environmentTiles.grass;
+    this.drawLaneTexture(grassTile, { y: laneY, laneY: laneIndex, height: laneHeight, fallbackColor: '#4a6047' });
+
+    const stripHeight = Math.max(2, Math.round(laneHeight * grassStyle.stripHeightRatio));
+    const drift = Math.sin(this.time * grassStyle.stripDriftSpeed + lane.seed) * this.tile * 0.12;
+    const shadeTop = ctx.createLinearGradient(0, laneY, 0, laneY + laneHeight);
+    shadeTop.addColorStop(0, 'rgba(19, 35, 20, 0.35)');
+    shadeTop.addColorStop(0.45, 'rgba(47, 78, 45, 0.12)');
+    shadeTop.addColorStop(1, 'rgba(8, 18, 9, 0.3)');
+    ctx.fillStyle = shadeTop;
+    ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
+
+    ctx.fillStyle = 'rgba(161, 199, 131, 0.1)';
+    ctx.fillRect(drift, laneY + Math.round((laneHeight - stripHeight) * 0.5), this.worldWidth, stripHeight);
+
+    const grainStep = Math.max(14, Math.round(this.tile * 0.3));
+    ctx.fillStyle = `rgba(209, 236, 182, ${grassStyle.grainAlpha})`;
+    for (let px = ((lane.seed * 1000) % grainStep) - grainStep; px < this.worldWidth; px += grainStep) {
+      ctx.fillRect(Math.round(px), laneY + 2, 1, Math.max(2, laneHeight - 4));
+    }
+  }
+
+  drawWaterLane({ lane, laneY, laneHeight, laneIndex }) {
+    const ctx = this.ctx;
+    const waterStyle = GAME_CONFIG.environmentTiles.water;
+    const waterTile = this.environmentSprites.riverTile;
+    const renderHeight = Math.max(1, Math.round(laneHeight * waterStyle.tileHeightRatio));
+    const yInset = Math.round((laneHeight - renderHeight) * 0.5);
+    this.drawLaneTexture(waterTile, {
+      y: laneY + yInset,
+      laneY: laneIndex,
+      height: renderHeight,
+      fallbackColor: '#34576d'
+    });
+
+    const overlay = ctx.createLinearGradient(0, laneY, 0, laneY + laneHeight);
+    overlay.addColorStop(0, 'rgba(16, 47, 66, 0.72)');
+    overlay.addColorStop(0.48, 'rgba(39, 102, 128, 0.2)');
+    overlay.addColorStop(1, 'rgba(13, 42, 60, 0.74)');
+    ctx.fillStyle = overlay;
+    ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
+
+    const waveBase = laneY + laneHeight * 0.26;
+    const waveAmp = laneHeight * 0.08;
+    ctx.strokeStyle = `rgba(231, 243, 253, ${waterStyle.foamAlpha})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = 0; x <= this.worldWidth; x += 10) {
+      const waveY = waveBase + Math.sin(x * 0.02 + this.time * (2 + waterStyle.flowSpeed * 10) + lane.seed) * waveAmp;
+      if (x === 0) ctx.moveTo(x, waveY);
+      else ctx.lineTo(x, waveY);
+    }
+    ctx.stroke();
+  }
+
+  drawRailLane({ lane, laneY, laneHeight, laneIndex }) {
+    const ctx = this.ctx;
+    const railStyle = GAME_CONFIG.environmentTiles.rail;
+    const ballastHeight = Math.max(4, Math.round(laneHeight * railStyle.ballastHeightRatio));
+    const ballastY = laneY + Math.round((laneHeight - ballastHeight) * 0.5);
+
+    ctx.fillStyle = '#5b5e51';
+    ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
+    this.drawLaneTexture(this.environmentSprites.railTile, {
+      y: ballastY,
+      laneY: laneIndex,
+      height: ballastHeight,
+      fallbackColor: '#676b5a'
+    });
+
+    ctx.fillStyle = 'rgba(30, 33, 29, 0.5)';
+    ctx.fillRect(0, ballastY, this.worldWidth, 2);
+    ctx.fillRect(0, ballastY + ballastHeight - 2, this.worldWidth, 2);
+
+    const gauge = this.tile * railStyle.trackGaugeRatio;
+    const centerY = laneY + laneHeight * 0.5;
+    const railOffset = gauge / 2;
+    ctx.strokeStyle = '#d3d3cf';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, centerY - railOffset);
+    ctx.lineTo(this.worldWidth, centerY - railOffset);
+    ctx.moveTo(0, centerY + railOffset);
+    ctx.lineTo(this.worldWidth, centerY + railOffset);
+    ctx.stroke();
+
+    const tieCount = railStyle.tieCount;
+    const tieW = Math.max(8, Math.round(this.tile * 0.18));
+    const tieH = Math.max(4, Math.round(gauge + this.tile * 0.12));
+    const tieGap = this.worldWidth / tieCount;
+    const tieOffset = ((this.time * 38 * lane.direction) % tieGap + tieGap) % tieGap;
+    ctx.fillStyle = 'rgba(49, 38, 27, 0.86)';
+    for (let i = -1; i <= tieCount + 1; i += 1) {
+      const tieX = Math.round(i * tieGap - tieOffset);
+      ctx.fillRect(tieX, Math.round(centerY - tieH / 2), tieW, tieH);
+    }
+
+    const warning = this.trainWarnings.get(laneIndex);
+    if (warning?.active) {
+      const alpha = warning.phase > 0 ? 0.42 : 0.16;
+      ctx.fillStyle = `rgba(198, 39, 39, ${alpha})`;
+      ctx.fillRect(0, ballastY, this.worldWidth, ballastHeight);
+      ctx.fillStyle = `rgba(255, 242, 210, ${Math.max(0.2, alpha)})`;
+      ctx.fillRect(10, Math.round(centerY - 5), 14, 10);
+      ctx.fillRect(this.worldWidth - 24, Math.round(centerY - 5), 14, 10);
+    }
+  }
+
   drawLanes() {
     const ctx = this.ctx;
     const from = Math.floor(this.cameraY) - 2;
@@ -993,37 +1105,9 @@ export class Game {
         ctx.lineTo(this.worldWidth, laneY + Math.round(laneHeight * 0.56));
         ctx.stroke();
         ctx.setLineDash([]);
-      } else if (lane.type === 'water') {
-        const riverTile = this.environmentSprites.riverTile;
-        this.drawLaneTexture(riverTile, { y: laneY, laneY: y, height: laneHeight, fallbackColor: '#34576d' });
-
-        ctx.fillStyle = 'rgba(238, 242, 245, 0.14)';
-        for (let i = 0; i < 4; i += 1) {
-          const waveY = laneY + laneHeight * 0.2 + i * 13 + Math.sin(this.time * 2.5 + i + lane.seed) * 3;
-          ctx.fillRect(0, waveY, this.worldWidth, 3);
-        }
-      } else if (lane.type === 'rail') {
-        this.drawLaneTexture(this.environmentSprites.railTile, { y: laneY, laneY: y, height: laneHeight, fallbackColor: '#6f755b' });
-
-        const warning = this.trainWarnings.get(y);
-        if (warning?.active) {
-          const alpha = warning.phase > 0 ? 0.55 : 0.2;
-          ctx.fillStyle = `rgba(200, 54, 54, ${alpha})`;
-          ctx.fillRect(0, laneY + Math.round(laneHeight * 0.06), this.worldWidth, Math.round(laneHeight * 0.88));
-          ctx.fillStyle = `rgba(255, 240, 240, ${Math.max(0.24, alpha - 0.08)})`;
-          ctx.beginPath();
-          ctx.arc(this.worldWidth - 20, laneY + laneHeight * 0.5, 9, 0, Math.PI * 2);
-          ctx.arc(20, laneY + laneHeight * 0.5, 9, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else {
-        this.drawLaneTexture(this.environmentSprites.grassTile, {
-          y: laneY,
-          laneY: y,
-          height: laneHeight,
-          fallbackColor: '#4a6047'
-        });
-      }
+      } else if (lane.type === 'water') this.drawWaterLane({ lane, laneY, laneHeight, laneIndex: y });
+      else if (lane.type === 'rail') this.drawRailLane({ lane, laneY, laneHeight, laneIndex: y });
+      else this.drawGrassLane({ lane, laneY, laneHeight, laneIndex: y });
 
       this.drawProps(lane, laneY);
     }
@@ -1054,11 +1138,12 @@ export class Game {
 
     const propX = (seedOffset % 4) * this.tile * 2.1 + this.tile * 0.25;
     if (lane.type === 'road') {
-      const foodCartSprite = this.environmentSprites.foodCart;
-      if (foodCartSprite?.complete) {
-        const w = this.tile * 0.46;
-        const h = this.tile * 0.36;
-        ctx.drawImage(foodCartSprite, propX, y + this.tile * 0.56, w, h);
+      const variant = Math.floor(lane.seed * 1000) % 2 === 0 ? 'foodCart' : 'benson1';
+      const streetProp = this.environmentSprites[variant];
+      if (streetProp?.complete) {
+        const w = this.tile * (variant === 'benson1' ? 0.5 : 0.46);
+        const h = this.tile * (variant === 'benson1' ? 0.38 : 0.36);
+        ctx.drawImage(streetProp, propX, y + this.tile * 0.54, w, h);
       } else {
         ctx.fillStyle = '#7c5235';
         ctx.fillRect(propX, y + this.tile * 0.65, 36, 20);

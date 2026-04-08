@@ -198,17 +198,43 @@ export class UIController {
   renderAssetGuide() {
     if (!this.infoList) return;
     this.infoList.innerHTML = '';
-    for (const item of ASSET_GUIDE) {
-      const row = document.createElement('article');
-      row.className = 'info-item';
-      row.innerHTML = `
-        <img src="${item.preview}" alt="${item.name} preview" loading="lazy" />
-        <div>
-          <h3>${item.name} <span class="badge badge-${item.action}">${item.action}</span></h3>
-          <p>${item.description}</p>
-        </div>
-      `;
-      this.infoList.append(row);
+
+    const grouped = ASSET_GUIDE.reduce((acc, item) => {
+      const category = item.name.includes('Train')
+        ? 'Transit Hazards'
+        : item.name.includes('Coin')
+          ? 'Collectibles'
+          : item.name.includes('Fig')
+            ? 'Player'
+            : item.name.includes('Tile')
+              ? 'Terrain'
+              : 'World Objects';
+      if (!acc[category]) acc[category] = [];
+      acc[category].push(item);
+      return acc;
+    }, {});
+
+    for (const [category, items] of Object.entries(grouped)) {
+      const section = document.createElement('section');
+      section.className = 'dev-asset-category';
+      section.innerHTML = `<h4>${category}</h4>`;
+
+      const list = document.createElement('div');
+      list.className = 'dev-asset-list';
+      for (const item of items) {
+        const row = document.createElement('article');
+        row.className = 'info-item';
+        row.innerHTML = `
+          <img src="${item.preview}" alt="${item.name} preview" loading="lazy" />
+          <div>
+            <h3>${item.name} <span class="badge badge-${item.action}">${item.action}</span></h3>
+            <p>${item.description}</p>
+          </div>
+        `;
+        list.append(row);
+      }
+      section.append(list);
+      this.infoList.append(section);
     }
   }
 
