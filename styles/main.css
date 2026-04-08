@@ -68,6 +68,8 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .stat-card {
@@ -102,6 +104,11 @@ body {
 .stat-card.best-pop {
   border-color: rgba(159, 124, 87, 0.75);
   box-shadow: 0 0 0 1px rgba(159, 124, 87, 0.3), 0 10px 24px rgba(159, 124, 87, 0.24);
+}
+
+.stat-card.charged {
+  border-color: rgba(226, 201, 111, 0.9);
+  box-shadow: 0 0 0 1px rgba(226, 201, 111, 0.45), 0 8px 18px rgba(226, 201, 111, 0.2);
 }
 
 .icon-btn,
@@ -152,6 +159,31 @@ button:focus-visible {
   width: 100%;
   height: min(72vh, 860px);
   touch-action: none;
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%) translateY(-10px);
+  background: rgba(22, 33, 28, 0.88);
+  border: 1px solid rgba(143, 198, 160, 0.6);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.toast[data-variant='success'] {
+  border-color: rgba(226, 201, 111, 0.8);
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .overlay {
@@ -265,6 +297,15 @@ kbd {
   border-radius: 14px;
 }
 
+#superJumpBtn {
+  width: 186px;
+  height: 46px;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  border-color: rgba(226, 201, 111, 0.8);
+  background: linear-gradient(180deg, #8e7a3f, #65562f);
+}
+
 @keyframes card-in {
   from {
     transform: translateY(8px) scale(0.98);
@@ -284,11 +325,12 @@ kbd {
   }
 
   .stats {
-    justify-content: space-between;
+    justify-content: center;
   }
 
   .stat-card {
     flex: 1;
+    min-width: 92px;
   }
 
   .icon-btn {
@@ -297,19 +339,5 @@ kbd {
 
   #gameCanvas {
     height: min(68vh, 760px);
-  }
-}
-
-@media (min-width: 900px) {
-  .touch-controls {
-    display: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
   }
 }

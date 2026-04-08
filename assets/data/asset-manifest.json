@@ -1,13 +1,36 @@
 {
-  "images": {
-    "playerSprites": {
-      "forward": "assets/images/player-forward.svg",
-      "left": "assets/images/player-left.svg",
-      "right": "assets/images/player-right.svg",
-      "back": "assets/images/player-back.svg"
-    },
-    "vehicle": "assets/images/vehicle-placeholder.svg",
-    "log": "assets/images/log-placeholder.svg"
+  "player": {
+    "figForward": "assets/player/figForward.svg",
+    "figLeft": "assets/player/figLeft.svg",
+    "figRight": "assets/player/figRight.svg",
+    "figBack": "assets/player/figBack.svg"
+  },
+  "vehicles": {
+    "car1": "assets/vehicles/car1.svg",
+    "car2": "assets/vehicles/car2.svg",
+    "car3": "assets/vehicles/car3.svg",
+    "bike1": "assets/vehicles/bike1.svg",
+    "scooter1": "assets/vehicles/scooter1.svg",
+    "maxTrain": "assets/vehicles/maxTrain.svg"
+  },
+  "hazards": {
+    "log1": "assets/hazards/log1.svg",
+    "raft1": "assets/hazards/raft1.svg",
+    "kayak1": "assets/hazards/kayak1.svg"
+  },
+  "collectibles": {
+    "coin": "assets/collectibles/coin.svg"
+  },
+  "environment": {
+    "riverTile": "assets/environment/riverTile.svg",
+    "roadTile": "assets/environment/roadTile.svg",
+    "sidewalkTile": "assets/environment/sidewalkTile.svg",
+    "bridgeTile": "assets/environment/bridgeTile.svg",
+    "tree1": "assets/environment/tree1.svg",
+    "foodCart1": "assets/environment/foodCart1.svg"
+  },
+  "ui": {
+    "superJumpReady": "assets/ui/superJumpReady.svg"
   },
   "audio": {
     "hop": "assets/audio/hop.wav",
@@ -16,7 +39,7 @@
     "ui": "assets/audio/ui.wav"
   },
   "notes": {
-    "swapInstructions": "Replace files while keeping keys the same, or update js/config.js ASSET_PATHS values.",
-    "recommendedSpriteSize": "128x128 player sprites per direction, 192x96 vehicles, 224x72 hazards"
+    "swapInstructions": "Replace any file in this manifest with your own art while keeping key names unchanged.",
+    "naming": "All keys are human-readable and grouped by purpose for easy GitHub Pages-safe swapping."
   }
 }

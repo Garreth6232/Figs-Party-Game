@@ -13,6 +13,7 @@ const muteBtn = document.getElementById('muteBtn');
 const startBtn = document.getElementById('startBtn');
 const restartBtn = document.getElementById('restartBtn');
 const resumeBtn = document.getElementById('resumeBtn');
+const superJumpBtn = document.getElementById('superJumpBtn');
 
 const syncMuteButton = () => {
   muteBtn.textContent = audio.isMuted ? '🔇' : '🔊';
@@ -41,10 +42,15 @@ resumeBtn.addEventListener('click', () => {
   audio.play('ui');
 });
 
+superJumpBtn?.addEventListener('click', () => {
+  game.useSuperJump();
+});
+
 const input = new InputManager({
   canvas,
   touchContainer: document.querySelector('.touch-controls'),
   onMove: (dir) => game.move(dir),
+  onSuperJump: () => game.useSuperJump(),
   onPause: () => {
     if (game.state === GAME_STATES.MENU || game.state === GAME_STATES.GAME_OVER) return;
     game.togglePause();

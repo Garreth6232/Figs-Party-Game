@@ -1,4 +1,4 @@
-import { ASSET_PATHS, GAME_CONFIG, GAME_STATES, STORAGE_KEYS } from './config.js';
+import { ASSET_MANIFEST, GAME_CONFIG, GAME_STATES, STORAGE_KEYS } from './config.js';
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const randRange = (min, max) => Math.random() * (max - min) + min;
@@ -11,6 +11,10 @@ function weightedLaneType(weights) {
     if (cursor <= 0) return entry.type;
   }
   return weights[0].type;
+}
+
+function randomFrom(list) {
+  return list[Math.floor(Math.random() * list.length)];
 }
 
 export class Game {
@@ -29,8 +33,14 @@ export class Game {
   }
 
   loadPlayerSprites() {
-    const sprites = ASSET_PATHS.images.playerSprites;
-    for (const [direction, src] of Object.entries(sprites)) {
+    const sprites = ASSET_MANIFEST.player;
+    const map = {
+      forward: sprites.figForward,
+      left: sprites.figLeft,
+      right: sprites.figRight,
+      back: sprites.figBack
+    };
+    for (const [direction, src] of Object.entries(map)) {
       const image = new Image();
       image.src = src;
       image.decoding = 'async';
@@ -71,8 +81,13 @@ export class Game {
       facing: 'forward'
     };
     this.score = 0;
+    this.coinCount = 0;
+    this.superJumps = 0;
     this.maxY = this.player.y;
     this.hazards = [];
+    this.platforms = [];
+    this.coins = [];
+    this.coinSpawnTimer = 0;
     this.particles = [];
     this.nearMisses = new Set();
     this.lastNearMissAt = 0;
@@ -81,10 +96,14 @@ export class Game {
     this.cameraY = this.player.y - 3;
     this.shake = 0;
     this.nextHazardId = 1;
+    this.nextPlatformId = 1;
+    this.nextCoinId = 1;
     this.laneCache = new Map();
     for (let y = -6; y < 80; y += 1) this.ensureLane(y);
     this.ui.updateScore(this.score);
     this.ui.updateBest(this.best);
+    this.ui.updateCoins(this.coinCount, GAME_CONFIG.coins.coinsNeededForSuperJump);
+    this.ui.updateSuperJumps(this.superJumps);
   }
 
   start() {
@@ -134,17 +153,65 @@ export class Game {
     this.audio.play('hop');
     this.lastMoveAt = now;
 
-    if (this.player.y > this.maxY) {
-      const gained = this.player.y - this.maxY;
-      this.maxY = this.player.y;
-      this.score += gained;
-      const bestPulse = this.updateBestIfNeeded();
-      this.ui.updateScore(this.score, { pulse: true, bestPulse });
-      this.audio.play('score');
-      this.spawnBurst('#9fb8aa', 10);
-    }
+    this.handleProgressScore();
+    this.collectCoinAtPlayer();
 
     for (let y = this.player.y - 8; y < this.player.y + 40; y += 1) this.ensureLane(y);
+  }
+
+  useSuperJump() {
+    if (this.state !== GAME_STATES.PLAYING || this.superJumps < 1) return;
+    const startY = this.player.y;
+    const targetY = startY + GAME_CONFIG.coins.superJumpDistance;
+    const landingY = this.findSafeLandingRow(targetY);
+
+    this.superJumps -= 1;
+    this.ui.updateSuperJumps(this.superJumps);
+    this.ui.showToast('SUPER JUMP!', 'success');
+    this.audio.play('super_use');
+
+    this.player.y = landingY;
+    this.player.drawY = landingY - 1.2;
+    this.player.stretch = 0.35;
+    this.player.facing = 'back';
+    this.spawnBurst('#d9bd70', 30);
+
+    this.handleProgressScore();
+    this.collectCoinAtPlayer();
+
+    for (let y = this.player.y - 8; y < this.player.y + 45; y += 1) this.ensureLane(y);
+  }
+
+  findSafeLandingRow(targetY) {
+    const scanDepth = 8;
+    for (let y = targetY; y >= Math.max(this.player.y + 1, targetY - scanDepth); y -= 1) {
+      this.ensureLane(y);
+      const lane = this.laneCache.get(y);
+      if (!lane) continue;
+      if (lane.type === 'grass') return y;
+      if (lane.type === 'road' && !this.hasBlockingHazard(this.player.x, y, 0.9)) return y;
+      if (lane.type === 'rail') continue;
+      if (lane.type === 'water') {
+        const platform = this.findPlatformUnderPlayerAt(this.player.x, y);
+        if (platform) return y;
+      }
+    }
+    return Math.max(this.player.y + 1, targetY - scanDepth);
+  }
+
+  hasBlockingHazard(x, y, padding = 0.8) {
+    return this.hazards.some((h) => h.y === y && Math.abs(h.x - x) < h.w * 0.5 + padding);
+  }
+
+  handleProgressScore() {
+    if (this.player.y <= this.maxY) return;
+    const gained = this.player.y - this.maxY;
+    this.maxY = this.player.y;
+    this.score += gained;
+    const bestPulse = this.updateBestIfNeeded();
+    this.ui.updateScore(this.score, { pulse: true, bestPulse });
+    this.audio.play('score');
+    this.spawnBurst('#9fb8aa', 10);
   }
 
   updateBestIfNeeded() {
@@ -157,7 +224,9 @@ export class Game {
 
   ensureLane(y) {
     if (this.laneCache.has(y)) return;
-    const type = y <= 0 ? 'grass' : weightedLaneType(GAME_CONFIG.laneWeights);
+
+    const isSafeStart = y <= GAME_CONFIG.safeStartRows;
+    const type = isSafeStart ? 'grass' : weightedLaneType(GAME_CONFIG.laneWeights);
     const direction = Math.random() > 0.5 ? 1 : -1;
     const lane = { y, type, direction, speed: 0, timer: 0, interval: 2, seed: Math.random() * 1000 };
 
@@ -165,8 +234,9 @@ export class Game {
       lane.speed = randRange(1.35, 2.7) + this.score * 0.012;
       lane.interval = randRange(1.75, 2.8);
     } else if (type === 'water') {
-      lane.speed = randRange(0.9, 1.8);
-      lane.interval = randRange(1.95, 3.3);
+      lane.speed = randRange(GAME_CONFIG.riverPlatforms.minSpeed, GAME_CONFIG.riverPlatforms.maxSpeed);
+      lane.interval = randRange(GAME_CONFIG.riverPlatforms.minInterval, GAME_CONFIG.riverPlatforms.maxInterval);
+      lane.platformType = randomFrom(GAME_CONFIG.riverPlatforms.laneTypes);
     } else if (type === 'rail') {
       lane.speed = randRange(5.1, 7.2) + this.score * 0.03;
       lane.interval = randRange(4.7, 7.7);
@@ -175,20 +245,78 @@ export class Game {
   }
 
   spawnHazard(lane) {
-    if (lane.type === 'grass') return;
+    if (lane.type === 'grass' || lane.type === 'water') return;
     const startX = lane.direction > 0 ? -1.4 : GAME_CONFIG.cols + 1.4;
+    const vehicleType = lane.type === 'rail' ? 'maxTrain' : randomFrom(['car1', 'car2', 'car3', 'scooter1', 'bike1']);
     const h = {
       id: this.nextHazardId++,
-      type: lane.type === 'water' ? 'bike' : lane.type === 'rail' ? 'max' : Math.random() < 0.22 ? 'scooter' : 'car',
+      type: vehicleType,
       x: startX,
       prevX: startX,
       y: lane.y,
       dir: lane.direction,
       speed: lane.speed,
-      w: lane.type === 'rail' ? 2.8 : lane.type === 'water' ? 1.1 : 1.2,
-      h: lane.type === 'water' ? 0.65 : 0.8
+      w: lane.type === 'rail' ? 2.8 : vehicleType.startsWith('car') ? 1.2 : vehicleType === 'scooter1' ? 1.0 : 0.9,
+      h: lane.type === 'rail' ? 0.8 : 0.7
     };
     this.hazards.push(h);
+  }
+
+  spawnPlatform(lane) {
+    if (lane.type !== 'water') return;
+    const platformType = lane.platformType ?? randomFrom(GAME_CONFIG.riverPlatforms.laneTypes);
+    const startX = lane.direction > 0 ? -1.2 : GAME_CONFIG.cols + 1.2;
+    const width = GAME_CONFIG.riverPlatforms.widthByType[platformType] ?? 1.1;
+    const height = GAME_CONFIG.riverPlatforms.heightByType[platformType] ?? 0.45;
+    this.platforms.push({
+      id: this.nextPlatformId++,
+      type: platformType,
+      x: startX,
+      prevX: startX,
+      y: lane.y,
+      dir: lane.direction,
+      speed: lane.speed,
+      w: width,
+      h: height
+    });
+  }
+
+  spawnCoin() {
+    if (this.coins.length >= GAME_CONFIG.coins.maxActive) return;
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const y = this.player.y + Math.floor(randRange(GAME_CONFIG.coins.spawnAheadMin, GAME_CONFIG.coins.spawnAheadMax));
+      this.ensureLane(y);
+      const lane = this.laneCache.get(y);
+      if (!lane || lane.type !== 'grass') continue;
+
+      const x = Math.floor(randRange(0, GAME_CONFIG.cols));
+      const occupied = this.coins.some((coin) => coin.x === x && Math.abs(coin.y - y) < 2);
+      if (occupied) continue;
+
+      this.coins.push({ id: this.nextCoinId++, x, y, bobSeed: Math.random() * 1000 });
+      return;
+    }
+  }
+
+  collectCoinAtPlayer() {
+    const coinIndex = this.coins.findIndex((coin) => coin.x === this.player.x && coin.y === this.player.y);
+    if (coinIndex < 0) return;
+
+    this.coins.splice(coinIndex, 1);
+    this.coinCount += 1;
+    this.ui.updateCoins(this.coinCount, GAME_CONFIG.coins.coinsNeededForSuperJump);
+    this.audio.play('coin');
+    this.spawnBurst('#e1bf63', 14);
+
+    if (this.coinCount >= GAME_CONFIG.coins.coinsNeededForSuperJump) {
+      this.coinCount -= GAME_CONFIG.coins.coinsNeededForSuperJump;
+      this.superJumps += 1;
+      this.ui.updateCoins(this.coinCount, GAME_CONFIG.coins.coinsNeededForSuperJump);
+      this.ui.updateSuperJumps(this.superJumps);
+      this.ui.showToast('Super Jump Charged! Press J', 'success');
+      this.audio.play('super_ready');
+    }
   }
 
   update(dt) {
@@ -211,13 +339,20 @@ export class Game {
       if (lane.type === 'grass') continue;
       lane.timer += dt;
       let minInterval = 1.1;
-      if (lane.type === 'water') minInterval = 1.45;
+      if (lane.type === 'water') minInterval = GAME_CONFIG.riverPlatforms.minInterval;
       if (lane.type === 'rail') minInterval = 3.35;
       const interval = Math.max(minInterval, lane.interval / difficulty);
       if (lane.timer >= interval) {
         lane.timer = 0;
-        this.spawnHazard(lane);
+        if (lane.type === 'water') this.spawnPlatform(lane);
+        else this.spawnHazard(lane);
       }
+    }
+
+    this.coinSpawnTimer += dt;
+    if (this.coinSpawnTimer >= 1) {
+      this.coinSpawnTimer = 0;
+      if (Math.random() < GAME_CONFIG.coins.spawnChancePerSecond) this.spawnCoin();
     }
 
     for (const hazard of this.hazards) {
@@ -226,7 +361,17 @@ export class Game {
     }
     this.hazards = this.hazards.filter((h) => h.x > -5 && h.x < GAME_CONFIG.cols + 5);
 
-    this.handleCollisions();
+    for (const platform of this.platforms) {
+      platform.prevX = platform.x;
+      platform.x += platform.speed * platform.dir * dt;
+    }
+    this.platforms = this.platforms.filter((p) => p.x > -5 && p.x < GAME_CONFIG.cols + 5);
+
+    const minCoinY = this.player.y - 2;
+    this.coins = this.coins.filter((coin) => coin.y >= minCoinY);
+
+    this.handleCollisions(dt);
+    this.collectCoinAtPlayer();
     this.shake *= GAME_CONFIG.screenShakeDecay;
   }
 
@@ -241,11 +386,18 @@ export class Game {
     }
   }
 
-  handleCollisions() {
+  findPlatformUnderPlayerAt(x, y) {
+    const padding = GAME_CONFIG.riverPlatforms.hitboxPaddingX;
+    return this.platforms.find((platform) => {
+      if (platform.y !== y) return false;
+      const halfWidth = platform.w * 0.5 - padding;
+      return Math.abs(platform.x - x) <= halfWidth;
+    });
+  }
+
+  handleCollisions(dt) {
     const lane = this.laneCache.get(this.player.y);
     if (!lane) return;
-
-    let bikeUnderPlayer = null;
 
     for (const h of this.hazards) {
       if (Math.abs(h.y - this.player.y) > 0.2) continue;
@@ -257,13 +409,8 @@ export class Game {
       const maxX = Math.max(h.prevX, h.x) + playerRadius;
       const sweptHit = this.player.drawX >= minX - hazardRadius && this.player.drawX <= maxX + hazardRadius;
 
-      if (h.type === 'bike') {
-        if (nowGap < hazardRadius + 0.26) bikeUnderPlayer = h;
-        continue;
-      }
-
       if (nowGap <= hazardRadius + playerRadius || sweptHit) {
-        this.kill(h.type === 'max' ? 'A MAX train blasted through your lane.' : 'Portland traffic cut off your route.');
+        this.kill(h.type === 'maxTrain' ? 'A MAX train blasted through your lane.' : 'Portland traffic cut off your route.');
         return;
       }
 
@@ -283,15 +430,18 @@ export class Game {
     }
 
     if (lane.type === 'water') {
-      if (!bikeUnderPlayer) {
+      const platform = this.findPlatformUnderPlayerAt(this.player.drawX, this.player.y);
+      if (!platform) {
         this.kill('The Willamette rain runoff swept you away.');
         return;
       }
-      const rideStep = bikeUnderPlayer.speed * bikeUnderPlayer.dir * 0.014;
+
+      const rideStep = platform.speed * platform.dir * dt;
       this.player.drawX = clamp(this.player.drawX + rideStep, 0, GAME_CONFIG.cols - 1);
       this.player.x = clamp(Math.round(this.player.drawX), 0, GAME_CONFIG.cols - 1);
-      if (this.player.drawX <= 0.05 || this.player.drawX >= GAME_CONFIG.cols - 1.05) {
-        this.kill('You slipped from the bike lane into the river.');
+
+      if (this.player.drawX <= 0.03 || this.player.drawX >= GAME_CONFIG.cols - 1.03) {
+        this.kill('You drifted off the floating platform into the river.');
       }
     }
   }
@@ -341,7 +491,9 @@ export class Game {
     ctx.save();
     ctx.translate(shakeX, shakeY);
     this.drawLanes();
+    this.drawPlatforms();
     this.drawHazards();
+    this.drawCoins();
     this.drawPlayer();
     this.drawParticles();
     this.drawRain();
@@ -368,7 +520,6 @@ export class Game {
       ctx.fillRect(0, pos.y, this.worldWidth, this.tile + 1);
 
       if (lane.type === 'road') {
-        // road + bike lane
         ctx.fillStyle = '#505962';
         ctx.fillRect(0, pos.y + this.tile * 0.12, this.worldWidth, this.tile * 0.76);
         ctx.fillStyle = '#5f7f69';
@@ -383,18 +534,14 @@ export class Game {
         ctx.stroke();
         ctx.setLineDash([]);
       } else if (lane.type === 'water') {
-        // rainy sidewalk + river channel
-        ctx.fillStyle = '#4f616e';
-        ctx.fillRect(0, pos.y, this.worldWidth, this.tile * 0.42);
-        ctx.fillStyle = '#6d7f8d';
-        ctx.fillRect(0, pos.y + this.tile * 0.42, this.worldWidth, this.tile * 0.58);
+        ctx.fillStyle = '#34576d';
+        ctx.fillRect(0, pos.y, this.worldWidth, this.tile);
         ctx.fillStyle = 'rgba(238, 242, 245, 0.14)';
         for (let i = 0; i < 4; i += 1) {
-          const waveY = pos.y + this.tile * 0.44 + i * 13 + Math.sin(this.time * 2.5 + i + lane.seed) * 3;
+          const waveY = pos.y + this.tile * 0.2 + i * 13 + Math.sin(this.time * 2.5 + i + lane.seed) * 3;
           ctx.fillRect(0, waveY, this.worldWidth, 3);
         }
       } else if (lane.type === 'rail') {
-        // MAX rail track
         ctx.fillStyle = '#6f755b';
         ctx.fillRect(0, pos.y, this.worldWidth, this.tile);
         ctx.fillStyle = '#616161';
@@ -403,7 +550,6 @@ export class Game {
         ctx.fillStyle = '#8f8a7a';
         for (let x = 0; x < this.worldWidth; x += 26) ctx.fillRect(x, pos.y + this.tile * 0.48, 10, 5);
       } else {
-        // park blocks with pines
         ctx.fillStyle = '#4a6047';
         ctx.fillRect(0, pos.y, this.worldWidth, this.tile);
       }
@@ -432,20 +578,53 @@ export class Game {
 
     const propX = (seedOffset % 4) * this.tile * 2.1 + this.tile * 0.25;
     if (lane.type === 'road') {
-      ctx.fillStyle = '#7c5235'; // food cart
+      ctx.fillStyle = '#7c5235';
       ctx.fillRect(propX, y + this.tile * 0.65, 36, 20);
       ctx.fillStyle = '#d8c7a1';
       ctx.fillRect(propX + 4, y + this.tile * 0.59, 28, 8);
     } else if (lane.type === 'water') {
-      ctx.fillStyle = '#8f9aa3'; // street sign
-      ctx.fillRect(propX + 14, y + this.tile * 0.14, 6, 24);
+      ctx.fillStyle = '#6b7e8b';
+      ctx.fillRect(propX + 14, y + this.tile * 0.08, 6, 24);
       ctx.fillStyle = '#d1d5db';
-      ctx.fillRect(propX, y + this.tile * 0.1, 34, 12);
+      ctx.fillRect(propX, y + this.tile * 0.04, 34, 12);
     } else if (lane.type === 'rail') {
-      ctx.fillStyle = '#64564f'; // coffee shop block
+      ctx.fillStyle = '#64564f';
       ctx.fillRect(propX, y + this.tile * 0.06, 44, 18);
       ctx.fillStyle = '#d4d4d4';
       ctx.fillRect(propX + 8, y + this.tile * 0.09, 18, 6);
+    }
+  }
+
+  drawPlatforms() {
+    const ctx = this.ctx;
+    for (const p of this.platforms) {
+      const pos = this.worldToScreen(p.x, p.y);
+      const width = p.w * this.tile;
+      const height = p.h * this.tile;
+      const x = pos.x - width / 2;
+      const y = pos.y + (this.tile - height) * 0.48;
+
+      if (p.type === 'raft1') {
+        ctx.fillStyle = '#907357';
+        ctx.fillRect(x, y, width, height);
+        ctx.fillStyle = '#c2ad7f';
+        ctx.fillRect(x + 5, y + 5, width - 10, height - 10);
+      } else if (p.type === 'kayak1') {
+        ctx.fillStyle = '#d87a49';
+        ctx.fillRect(x, y + 3, width, height - 6);
+        ctx.fillStyle = '#b86439';
+        ctx.fillRect(x + 5, y + height * 0.38, width - 10, height * 0.2);
+      } else {
+        ctx.fillStyle = '#7d5a3f';
+        ctx.fillRect(x, y + height * 0.15, width, height * 0.7);
+        ctx.fillStyle = '#8f6747';
+        for (let i = 0; i < 4; i += 1) {
+          ctx.fillRect(x + i * (width / 4), y + height * 0.2, 2, height * 0.6);
+        }
+      }
+
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      ctx.fillRect(x + 5, y + height - 4, Math.max(8, width - 10), 4);
     }
   }
 
@@ -458,12 +637,12 @@ export class Game {
       const x = pos.x - width / 2;
       const y = pos.y + (this.tile - height) * 0.5;
 
-      if (h.type === 'car') {
-        ctx.fillStyle = '#9a4f3d';
+      if (h.type.startsWith('car')) {
+        ctx.fillStyle = h.type === 'car2' ? '#3d7b9a' : h.type === 'car3' ? '#9b5c3d' : '#9a4f3d';
         ctx.fillRect(x, y, width, height);
         ctx.fillStyle = '#cbd5e1';
         ctx.fillRect(x + 10, y + 9, width * 0.3, 10);
-      } else if (h.type === 'scooter') {
+      } else if (h.type === 'scooter1') {
         ctx.fillStyle = '#2c8f71';
         ctx.fillRect(x, y + height * 0.35, width, height * 0.28);
         ctx.fillStyle = '#1f2937';
@@ -471,9 +650,9 @@ export class Game {
         ctx.arc(x + 8, y + height * 0.72, 4, 0, Math.PI * 2);
         ctx.arc(x + width - 8, y + height * 0.72, 4, 0, Math.PI * 2);
         ctx.fill();
-      } else if (h.type === 'bike') {
-        ctx.fillStyle = '#7d5a3f';
-        ctx.fillRect(x, y + height * 0.2, width, height * 0.5);
+      } else if (h.type === 'bike1') {
+        ctx.fillStyle = '#59685a';
+        ctx.fillRect(x, y + height * 0.35, width, height * 0.22);
       } else {
         ctx.fillStyle = '#1e8a5a';
         ctx.fillRect(x, y, width, height);
@@ -483,6 +662,26 @@ export class Game {
 
       ctx.fillStyle = 'rgba(0,0,0,0.22)';
       ctx.fillRect(x + 6, y + height - 8, Math.max(10, width - 12), 5);
+    }
+  }
+
+  drawCoins() {
+    const ctx = this.ctx;
+    for (const coin of this.coins) {
+      const pos = this.worldToScreen(coin.x, coin.y);
+      const bob = Math.sin(this.time * 5 + coin.bobSeed) * this.tile * 0.06;
+      const cx = pos.x + this.tile * 0.5;
+      const cy = pos.y + this.tile * 0.45 + bob;
+      const r = this.tile * 0.16;
+      ctx.fillStyle = '#e5c15f';
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#8f6f2d';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.fillStyle = '#f6e7a6';
+      ctx.fillRect(cx - 2, cy - r * 0.6, 4, r * 1.2);
     }
   }
 
@@ -520,7 +719,9 @@ export class Game {
     for (const p of this.particles) {
       const pos = this.worldToScreen(p.x, p.y);
       const alpha = Math.max(0, p.life / GAME_CONFIG.particleLifetime);
-      ctx.fillStyle = `${p.color}${Math.floor(alpha * 255).toString(16).padStart(2, '0')}`;
+      ctx.fillStyle = `${p.color}${Math.floor(alpha * 255)
+        .toString(16)
+        .padStart(2, '0')}`;
       ctx.fillRect(pos.x + this.tile * 0.45, pos.y + this.tile * 0.45, 4, 4);
     }
   }

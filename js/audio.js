@@ -50,6 +50,18 @@ export class AudioSystem {
         this.beep({ frequency: 680, duration: 0.06, type: 'triangle', gain: 0.02, glide: 45 });
         setTimeout(() => this.beep({ frequency: 820, duration: 0.08, type: 'triangle', gain: 0.018, glide: 40 }), 45);
       },
+      coin: () => {
+        this.beep({ frequency: 930, duration: 0.05, type: 'triangle', gain: 0.026, glide: 30 });
+        setTimeout(() => this.beep({ frequency: 1180, duration: 0.06, type: 'triangle', gain: 0.022, glide: 40 }), 34);
+      },
+      super_ready: () => {
+        this.beep({ frequency: 600, duration: 0.08, type: 'square', gain: 0.025, glide: 80 });
+        setTimeout(() => this.beep({ frequency: 900, duration: 0.11, type: 'square', gain: 0.025, glide: 120 }), 50);
+      },
+      super_use: () => {
+        this.beep({ frequency: 320, duration: 0.16, type: 'sawtooth', gain: 0.03, glide: 360 });
+        setTimeout(() => this.beep({ frequency: 880, duration: 0.1, type: 'triangle', gain: 0.02, glide: -100 }), 80);
+      },
       ui: () => this.beep({ frequency: 420, duration: 0.06, type: 'sine', gain: 0.02 })
     };
     table[name]?.();

@@ -2,8 +2,13 @@ export class UIController {
   constructor() {
     this.scoreEl = document.getElementById('scoreValue');
     this.bestEl = document.getElementById('bestValue');
+    this.coinEl = document.getElementById('coinValue');
+    this.superJumpEl = document.getElementById('superJumpValue');
     this.scoreCard = document.getElementById('scoreCard');
     this.bestCard = document.getElementById('bestCard');
+    this.coinCard = document.getElementById('coinCard');
+    this.superJumpCard = document.getElementById('superJumpCard');
+    this.toastEl = document.getElementById('toast');
     this.startScreen = document.getElementById('startScreen');
     this.pauseScreen = document.getElementById('pauseScreen');
     this.gameOverScreen = document.getElementById('gameOverScreen');
@@ -14,6 +19,7 @@ export class UIController {
     this.overlays = [this.startScreen, this.pauseScreen, this.gameOverScreen];
     this.scorePopTimer = null;
     this.bestPopTimer = null;
+    this.toastTimer = null;
   }
 
   pulseScore(isBest = false) {
@@ -39,6 +45,25 @@ export class UIController {
 
   updateBest(best) {
     this.bestEl.textContent = String(best);
+  }
+
+  updateCoins(coins, needed) {
+    this.coinEl.textContent = `${coins}/${needed}`;
+    this.coinCard.classList.toggle('charged', coins >= needed - 1);
+  }
+
+  updateSuperJumps(count) {
+    this.superJumpEl.textContent = String(count);
+    this.superJumpCard.classList.toggle('charged', count > 0);
+  }
+
+  showToast(message, variant = 'info') {
+    if (!this.toastEl) return;
+    this.toastEl.textContent = message;
+    this.toastEl.dataset.variant = variant;
+    this.toastEl.classList.add('show');
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => this.toastEl.classList.remove('show'), 1200);
   }
 
   hideAllOverlays() {

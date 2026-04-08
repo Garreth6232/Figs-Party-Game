@@ -10,11 +10,12 @@ const KEY_TO_DIR = {
 };
 
 export class InputManager {
-  constructor({ canvas, touchContainer, onMove, onPause }) {
+  constructor({ canvas, touchContainer, onMove, onPause, onSuperJump }) {
     this.canvas = canvas;
     this.touchContainer = touchContainer;
     this.onMove = onMove;
     this.onPause = onPause;
+    this.onSuperJump = onSuperJump;
     this.swipeStart = null;
     this.holdInterval = null;
     this.holdDir = null;
@@ -25,6 +26,11 @@ export class InputManager {
       if (event.repeat) return;
       if (event.code === 'KeyP' || event.code === 'Escape') {
         this.onPause();
+        return;
+      }
+      if (event.code === 'KeyJ' || event.code === 'Space') {
+        event.preventDefault();
+        this.onSuperJump();
         return;
       }
       const dir = KEY_TO_DIR[event.code];
@@ -42,6 +48,13 @@ export class InputManager {
       btn.addEventListener('pointerup', () => this.stopHold());
       btn.addEventListener('pointercancel', () => this.stopHold());
       btn.addEventListener('pointerleave', () => this.stopHold());
+    });
+
+    this.touchContainer.querySelectorAll('button[data-action="superjump"]').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        event.preventDefault();
+        this.onSuperJump();
+      });
     });
 
     this.canvas.addEventListener('pointerdown', (event) => {
