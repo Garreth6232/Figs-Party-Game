@@ -149,12 +149,51 @@ export const GAME_CONFIG = {
   },
   alignment: {
     player: { renderOffsetY: 0.0, collisionOffsetY: 0.0 },
-    cars: { renderOffsetY: 0.0, collisionOffsetY: 0.0 },
-    bike: { renderOffsetY: 0.0, collisionOffsetY: 0.01 },
-    scooter: { renderOffsetY: 0.0, collisionOffsetY: 0.01 },
-    maxTrain: { renderOffsetY: 0.0, collisionOffsetY: 0.0 },
     platform: { renderOffsetY: -0.02, collisionOffsetY: -0.02 },
     collectible: { renderOffsetY: -0.03, collisionOffsetY: -0.03 }
+  },
+  movingEntities: {
+    anchors: {
+      movingObjects: 'center'
+    },
+    profiles: {
+      car1: {
+        render: { width: 1.2, height: 0.7, offsetX: 0, offsetY: 0 },
+        collision: { type: 'car', width: 1.08, height: 0.56, offsetX: 0, offsetY: 0.01 }
+      },
+      car2: {
+        render: { width: 1.2, height: 0.7, offsetX: 0, offsetY: 0 },
+        collision: { type: 'car', width: 1.12, height: 0.58, offsetX: 0, offsetY: 0.01 }
+      },
+      car3: {
+        render: { width: 1.2, height: 0.7, offsetX: 0, offsetY: 0 },
+        collision: { type: 'car', width: 1.1, height: 0.56, offsetX: 0, offsetY: 0.01 }
+      },
+      bike1: {
+        render: { width: 0.9, height: 0.7, offsetX: 0, offsetY: 0 },
+        collision: { type: 'bike', width: 0.78, height: 0.46, offsetX: 0, offsetY: 0.08 }
+      },
+      scooter1: {
+        render: { width: 1.0, height: 0.7, offsetX: 0, offsetY: 0 },
+        collision: { type: 'scooter', width: 0.86, height: 0.44, offsetX: 0, offsetY: 0.08 }
+      },
+      maxTrain: {
+        render: { width: 2.8, height: 0.8, offsetX: 0, offsetY: 0 },
+        collision: { type: 'maxTrain', width: 2.72, height: 0.62, offsetX: 0, offsetY: 0.05 }
+      },
+      log1: {
+        render: { width: 1.5, height: 0.52, offsetX: 0, offsetY: -0.02 },
+        collision: { type: 'platform', width: 1.4, height: 0.34, offsetX: 0, offsetY: 0 }
+      },
+      raft1: {
+        render: { width: 1.2, height: 0.48, offsetX: 0, offsetY: -0.02 },
+        collision: { type: 'platform', width: 1.1, height: 0.32, offsetX: 0, offsetY: 0 }
+      },
+      kayak1: {
+        render: { width: 0.95, height: 0.42, offsetX: 0, offsetY: -0.02 },
+        collision: { type: 'platform', width: 0.78, height: 0.25, offsetX: 0, offsetY: 0.02 }
+      }
+    }
   },
   lanePalette: {
     grass: '#425942',
@@ -201,10 +240,10 @@ export const GAME_CONFIG = {
         height: 0.6,
         broadPadding: { x: 0.015, y: 0.02 }
       },
-      car: { width: 1.14, height: 0.64, broadPadding: { x: 0.02, y: 0.03 } },
-      bike: { width: 0.84, height: 0.58, broadPadding: { x: 0.015, y: 0.03 } },
-      scooter: { width: 0.92, height: 0.58, broadPadding: { x: 0.02, y: 0.03 } },
-      maxTrain: { width: 2.76, height: 0.74, broadPadding: { x: 0.015, y: 0.025 } },
+      car: { width: 1.1, height: 0.58, broadPadding: { x: 0.02, y: 0.03 } },
+      bike: { width: 0.78, height: 0.46, broadPadding: { x: 0.015, y: 0.03 } },
+      scooter: { width: 0.86, height: 0.44, broadPadding: { x: 0.02, y: 0.03 } },
+      maxTrain: { width: 2.72, height: 0.62, broadPadding: { x: 0.015, y: 0.025 } },
       platform: { broadPadding: { x: 0.01, y: 0.02 } },
       collectible: { width: 0.28, height: 0.28, broadPadding: { x: 0.01, y: 0.01 } }
     }

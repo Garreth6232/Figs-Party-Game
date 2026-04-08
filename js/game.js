@@ -18,6 +18,11 @@ function randomFrom(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
+const DEFAULT_MOVING_PROFILE = {
+  render: { width: 1, height: 0.6, offsetX: 0, offsetY: 0 },
+  collision: { type: 'car', width: 1, height: 0.5, offsetX: 0, offsetY: 0 }
+};
+
 export class Game {
   constructor({ canvas, audio, ui }) {
     this.canvas = canvas;
@@ -203,17 +208,43 @@ export class Game {
       const lane = this.laneCache.get(y);
       if (!lane) continue;
       if (lane.type === 'grass') return { x: this.player.x, y };
-      if (lane.type === 'road' && !this.hasBlockingHazard(this.player.x, y, 0.9)) return { x: this.player.x, y };
+      if (lane.type === 'road' && !this.hasBlockingHazard(this.player.x + 0.5, y, 0.55)) return { x: this.player.x, y };
       if (lane.type === 'water') {
         const platform = this.findPlatformUnderPoint(this.player.x + 0.5, y);
-        if (platform) return { x: clamp(Math.round(platform.x), 0, GAME_CONFIG.cols - 1), y };
+        if (platform) return { x: clamp(Math.floor(platform.x), 0, GAME_CONFIG.cols - 1), y };
       }
     }
     return { x: this.player.x, y: Math.max(this.player.y + 1, targetY - scanDepth) };
   }
 
-  hasBlockingHazard(x, y, padding = 0.8) {
-    return this.hazards.some((h) => h.y === y && Math.abs(h.x - x) < h.w * 0.5 + padding);
+  hasBlockingHazard(centerX, y, padding = 0.8) {
+    return this.hazards.some((h) => {
+      if (h.y !== y) return false;
+      const profile = this.getMovingProfile(h.type);
+      return Math.abs(this.getMovingCenterX(h, profile) - centerX) < (profile.collision.width ?? h.w) * 0.5 + padding;
+    });
+  }
+
+  getMovingProfile(type) {
+    return GAME_CONFIG.movingEntities.profiles[type] ?? DEFAULT_MOVING_PROFILE;
+  }
+
+  getMovingCenterX(entity, profile) {
+    return entity.x + (profile.collision.offsetX ?? 0);
+  }
+
+  getMovingCenterY(laneY, profile, mode = 'collision') {
+    const laneScreen = this.worldToScreen(0, laneY).y;
+    const offsetY = profile[mode]?.offsetY ?? 0;
+    return laneScreen + this.tile * (0.5 + offsetY);
+  }
+
+  getMovingDrawRect(entity, profile) {
+    const centerX = entity.x + (profile.render.offsetX ?? 0);
+    const centerY = this.getMovingCenterY(entity.y, profile, 'render');
+    const width = profile.render.width * this.tile;
+    const height = profile.render.height * this.tile;
+    return { x: centerX * this.tile - width / 2, y: centerY - height / 2, width, height };
   }
 
   handleProgressScore() {
@@ -252,7 +283,7 @@ export class Game {
     } else if (type === 'water') {
       lane.speed = randRange(GAME_CONFIG.riverPlatforms.minSpeed, GAME_CONFIG.riverPlatforms.maxSpeed);
       lane.platformType = randomFrom(GAME_CONFIG.riverPlatforms.laneTypes);
-      const platformW = GAME_CONFIG.riverPlatforms.widthByType[lane.platformType] ?? 1.1;
+      const platformW = this.getMovingProfile(lane.platformType).render.width;
       const maxIntervalByGap = GAME_CONFIG.riverPlatforms.maxGapSeconds - platformW / lane.speed;
       lane.interval = clamp(
         randRange(GAME_CONFIG.riverPlatforms.minInterval, GAME_CONFIG.riverPlatforms.maxInterval),
@@ -275,6 +306,7 @@ export class Game {
     for (let i = 0; i < count; i += 1) {
       const spacing = i * (GAME_CONFIG.cols / count);
       const x = lane.direction > 0 ? -1.2 + spacing : GAME_CONFIG.cols + 1.2 - spacing;
+      const profile = this.getMovingProfile(lane.platformType);
       this.platforms.push({
         id: this.nextPlatformId++,
         type: lane.platformType,
@@ -283,8 +315,8 @@ export class Game {
         y: lane.y,
         dir: lane.direction,
         speed: lane.speed,
-        w: GAME_CONFIG.riverPlatforms.widthByType[lane.platformType] ?? 1.1,
-        h: GAME_CONFIG.riverPlatforms.heightByType[lane.platformType] ?? 0.45
+        w: profile.render.width,
+        h: profile.render.height
       });
     }
   }
@@ -293,6 +325,7 @@ export class Game {
     if (lane.type === 'grass' || lane.type === 'water') return;
     const startX = lane.direction > 0 ? -1.4 : GAME_CONFIG.cols + 1.4;
     const vehicleType = lane.type === 'rail' ? 'maxTrain' : randomFrom(['car1', 'car2', 'car3', 'scooter1', 'bike1']);
+    const profile = this.getMovingProfile(vehicleType);
     const h = {
       id: this.nextHazardId++,
       type: vehicleType,
@@ -301,8 +334,8 @@ export class Game {
       y: lane.y,
       dir: lane.direction,
       speed: lane.speed,
-      w: lane.type === 'rail' ? 2.8 : vehicleType.startsWith('car') ? 1.2 : vehicleType === 'scooter1' ? 1.0 : 0.9,
-      h: lane.type === 'rail' ? 0.8 : 0.7
+      w: profile.render.width,
+      h: profile.render.height
     };
     this.hazards.push(h);
   }
@@ -311,6 +344,7 @@ export class Game {
     if (lane.type !== 'water') return;
     const platformType = lane.platformType ?? randomFrom(GAME_CONFIG.riverPlatforms.laneTypes);
     const startX = lane.direction > 0 ? -1.2 : GAME_CONFIG.cols + 1.2;
+    const profile = this.getMovingProfile(platformType);
     this.platforms.push({
       id: this.nextPlatformId++,
       type: platformType,
@@ -319,8 +353,8 @@ export class Game {
       y: lane.y,
       dir: lane.direction,
       speed: lane.speed,
-      w: GAME_CONFIG.riverPlatforms.widthByType[platformType] ?? 1.1,
-      h: GAME_CONFIG.riverPlatforms.heightByType[platformType] ?? 0.45
+      w: profile.render.width,
+      h: profile.render.height
     });
   }
 
@@ -449,10 +483,11 @@ export class Game {
   findPlatformUnderPoint(x, y) {
     return this.platforms.find((platform) => {
       if (platform.y !== y) return false;
-      const left = platform.x + 0.5 - platform.w * 0.5;
-      const right = platform.x + 0.5 + platform.w * 0.5;
-      const margin = GAME_CONFIG.riverPlatforms.hitboxPaddingX;
-      return x >= left + margin && x <= right - margin;
+      const entity = this.getPlatformCollisionEntity(platform);
+      const broad = this.collisionSystem.getAABB(entity, 'platform', this.tile);
+      const laneScreen = this.worldToScreen(0, y).y;
+      const playerCenterY = laneScreen + this.tile * 0.5;
+      return x * this.tile >= broad.left && x * this.tile <= broad.right && playerCenterY >= broad.top && playerCenterY <= broad.bottom;
     });
   }
 
@@ -498,14 +533,27 @@ export class Game {
   }
 
   getHazardCollisionEntity(hazard) {
-    const laneScreen = this.worldToScreen(0, hazard.y).y;
-    const align = hazard.type === 'maxTrain' ? GAME_CONFIG.alignment.maxTrain : hazard.type === 'bike1' ? GAME_CONFIG.alignment.bike : hazard.type === 'scooter1' ? GAME_CONFIG.alignment.scooter : GAME_CONFIG.alignment.cars;
-    return { ...hazard, screenY: laneScreen + this.tile * align.collisionOffsetY };
+    const profile = this.getMovingProfile(hazard.type);
+    return {
+      ...hazard,
+      centerX: this.getMovingCenterX(hazard, profile),
+      prevCenterX: hazard.prevX + (profile.collision.offsetX ?? 0),
+      centerY: this.getMovingCenterY(hazard.y, profile, 'collision'),
+      w: profile.collision.width,
+      h: profile.collision.height
+    };
   }
 
   getPlatformCollisionEntity(platform) {
-    const laneScreen = this.worldToScreen(0, platform.y).y;
-    return { ...platform, screenY: laneScreen + this.tile * GAME_CONFIG.alignment.platform.collisionOffsetY };
+    const profile = this.getMovingProfile(platform.type);
+    return {
+      ...platform,
+      centerX: this.getMovingCenterX(platform, profile),
+      prevCenterX: platform.prevX + (profile.collision.offsetX ?? 0),
+      centerY: this.getMovingCenterY(platform.y, profile, 'collision'),
+      w: profile.collision.width,
+      h: profile.collision.height
+    };
   }
 
   getCoinCollisionEntity(coin) {
@@ -523,7 +571,7 @@ export class Game {
       if (Math.abs(h.y - this.player.y) > 0.25) continue;
       const hazardEntity = this.getHazardCollisionEntity(h);
       const playerBroad = this.collisionSystem.getAABB(playerEntity, 'player', this.tile);
-      const hazardBroad = this.collisionSystem.getAABB(hazardEntity, h.type === 'maxTrain' ? 'maxTrain' : h.type.startsWith('car') ? 'car' : h.type === 'bike1' ? 'bike' : 'scooter', this.tile, {
+      const hazardBroad = this.collisionSystem.getAABB(hazardEntity, this.getMovingProfile(h.type).collision.type, this.tile, {
         swept: true
       });
       if (!this.collisionSystem.broadPhase(playerBroad, hazardBroad)) continue;
@@ -533,7 +581,7 @@ export class Game {
         'player',
         this.player.facing,
         hazardEntity,
-        h.type === 'maxTrain' ? 'maxTrain' : h.type.startsWith('car') ? 'car' : h.type === 'bike1' ? 'bike' : 'scooter',
+        this.getMovingProfile(h.type).collision.type,
         'forward',
         this.tile
       );
@@ -543,9 +591,9 @@ export class Game {
       }
 
       if (lane.type === 'road') {
-        const near = Math.abs(h.x - this.player.x);
+        const near = Math.abs(this.getMovingCenterX(h, this.getMovingProfile(h.type)) - (this.player.fx + 0.5));
         const now = performance.now();
-        if (near < 0.8 && !this.nearMisses.has(h.id) && now - this.lastNearMissAt > 120) {
+        if (near < 0.65 && !this.nearMisses.has(h.id) && now - this.lastNearMissAt > 120) {
           this.nearMisses.add(h.id);
           this.lastNearMissAt = now;
           this.score += 1;
@@ -728,11 +776,8 @@ export class Game {
   drawPlatforms() {
     const ctx = this.ctx;
     for (const p of this.platforms) {
-      const pos = this.worldToScreen(p.x, p.y);
-      const width = p.w * this.tile;
-      const height = p.h * this.tile;
-      const x = pos.x - width / 2;
-      const y = pos.y + (this.tile - height) * (0.5 + GAME_CONFIG.alignment.platform.renderOffsetY);
+      const profile = this.getMovingProfile(p.type);
+      const { x, y, width, height } = this.getMovingDrawRect(p, profile);
 
       if (p.type === 'raft1') {
         ctx.fillStyle = '#907357';
@@ -759,12 +804,8 @@ export class Game {
   drawHazards() {
     const ctx = this.ctx;
     for (const h of this.hazards) {
-      const pos = this.worldToScreen(h.x, h.y);
-      const width = h.w * this.tile;
-      const height = h.h * this.tile;
-      const x = pos.x - width / 2;
-      const align = h.type === 'maxTrain' ? GAME_CONFIG.alignment.maxTrain : h.type === 'bike1' ? GAME_CONFIG.alignment.bike : h.type === 'scooter1' ? GAME_CONFIG.alignment.scooter : GAME_CONFIG.alignment.cars;
-      const y = pos.y + (this.tile - height) * (0.5 + align.renderOffsetY);
+      const profile = this.getMovingProfile(h.type);
+      const { x, y, width, height } = this.getMovingDrawRect(h, profile);
 
       if (h.type.startsWith('car')) {
         ctx.fillStyle = h.type === 'car2' ? '#3d7b9a' : h.type === 'car3' ? '#9b5c3d' : '#9a4f3d';
@@ -799,7 +840,7 @@ export class Game {
     for (const coin of this.coins) {
       const pos = this.worldToScreen(coin.x, coin.y);
       const bob = Math.sin(this.time * 5 + coin.bobSeed) * this.tile * 0.06;
-      const cx = pos.x + this.tile * 0.5;
+      const cx = (coin.x + 0.5) * this.tile;
       const cy = pos.y + this.tile * (0.45 + GAME_CONFIG.alignment.collectible.renderOffsetY) + bob;
       const r = this.tile * 0.16;
       ctx.fillStyle = '#e5c15f';
@@ -877,9 +918,10 @@ export class Game {
     ];
 
     for (const h of this.hazards) {
+      const profile = this.getMovingProfile(h.type);
       entries.push({
         entity: this.getHazardCollisionEntity(h),
-        type: h.type === 'maxTrain' ? 'maxTrain' : h.type.startsWith('car') ? 'car' : h.type === 'bike1' ? 'bike' : 'scooter',
+        type: profile.collision.type,
         color: 'rgba(238, 104, 104, 0.7)',
         swept: true,
         showMask: false
