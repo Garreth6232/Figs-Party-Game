@@ -443,8 +443,8 @@ export const GAME_CONFIG = {
     sampleStridePx: 2,
     profiles: {
       player: {
-        width: 0.56,
-        height: 0.6,
+        width: 0.504,
+        height: 0.54,
         broadPadding: { x: 0.015, y: 0.02 }
       },
       car: { width: 1.1, height: 0.58, broadPadding: { x: 0.02, y: 0.03 } },
@@ -456,7 +456,7 @@ export const GAME_CONFIG = {
     }
   },
   coins: {
-    spawnChancePerSecond: 0.5,
+    spawnChancePerSecond: 0.75,
     maxActive: 3,
     spawnAheadMin: 4,
     spawnAheadMax: 15,
@@ -464,6 +464,21 @@ export const GAME_CONFIG = {
     superJumpDistance: 20
   },
   superJump: {
-    spriteDuration: 0.38
+    totalDuration: 2.5,
+    phases: {
+      charge: 0.75,
+      lift: 0.6,
+      launch: 0.65,
+      settle: 0.5
+    },
+    liftHeight: 1.15,
+    launchDistance: 20,
+    inputLocked: true,
+    cameraPunch: 0.12,
+    energy: {
+      rayCount: 8,
+      ringCount: 2,
+      trailCount: 4
+    }
   }
 };

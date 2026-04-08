@@ -3,6 +3,14 @@ import { CollisionSystem } from './collision.js';
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const randRange = (min, max) => Math.random() * (max - min) + min;
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOutCubic = (t) => 1 - (1 - t) ** 3;
+const easeInOutCubic = (t) => (t < 0.5 ? 4 * t ** 3 : 1 - ((-2 * t + 2) ** 3) / 2);
+const easeOutBack = (t) => {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
+};
 
 function weightedLaneType(weights) {
   const total = weights.reduce((sum, entry) => sum + entry.weight, 0);
@@ -38,6 +46,7 @@ export class Game {
     this.vehicleSprites = {};
     this.hazardSprites = {};
     this.superJumpVisualTimer = 0;
+    this.superJumpState = null;
     this.collisionSystem = new CollisionSystem();
     this.resize();
     this.loadSprites();
@@ -122,7 +131,9 @@ export class Game {
       stretch: 0,
       tilt: 0,
       facing: 'forward',
-      visualState: 'normal'
+      visualState: 'normal',
+      superJumpEnergy: 0,
+      superJumpPhase: 'idle'
     };
     this.score = 0;
     this.coinCount = 0;
@@ -138,6 +149,7 @@ export class Game {
     this.lastMoveAt = 0;
     this.time = 0;
     this.superJumpVisualTimer = 0;
+    this.superJumpState = null;
     this.cameraY = this.player.y - 3;
     this.shake = 0;
     this.shakeTimer = 0;
@@ -180,6 +192,7 @@ export class Game {
 
   move(dir) {
     if (this.state !== GAME_STATES.PLAYING) return;
+    if (this.superJumpState?.active && GAME_CONFIG.superJump.inputLocked) return;
 
     const facingMap = { up: 'back', down: 'forward', left: 'left', right: 'right' };
     this.player.facing = facingMap[dir] ?? this.player.facing;
@@ -215,8 +228,9 @@ export class Game {
   }
 
   useSuperJump() {
-    if (this.state !== GAME_STATES.PLAYING || this.superJumps < 1) return;
-    const targetY = this.player.y + GAME_CONFIG.coins.superJumpDistance;
+    if (this.state !== GAME_STATES.PLAYING || this.superJumps < 1 || this.superJumpState?.active) return;
+    const distance = GAME_CONFIG.superJump.launchDistance ?? GAME_CONFIG.coins.superJumpDistance;
+    const targetY = this.player.y + distance;
     const landing = this.findSafeLandingSpot(targetY);
 
     this.superJumps -= 1;
@@ -224,21 +238,126 @@ export class Game {
     this.ui.showToast('SUPER JUMP!', 'success');
     this.audio.play('super_use');
 
-    this.player.x = landing.x;
-    this.player.fx = landing.x;
-    this.player.drawX = landing.x;
-    this.player.y = landing.y;
-    this.player.drawY = landing.y - 1.2;
-    this.player.stretch = 0.35;
+    const phaseConfig = GAME_CONFIG.superJump.phases;
+    const phaseTotal = phaseConfig.charge + phaseConfig.lift + phaseConfig.launch + phaseConfig.settle;
+    const totalDuration = phaseTotal;
+
     this.player.facing = 'back';
     this.player.visualState = 'superJump';
-    this.superJumpVisualTimer = GAME_CONFIG.superJump.spriteDuration;
-    this.spawnBurst('#d9bd70', 30);
+    this.superJumpVisualTimer = totalDuration;
+    this.attachedPlatformId = null;
+    this.triggerScreenShake({ intensity: GAME_CONFIG.superJump.cameraPunch, duration: 0.14 });
+    this.spawnBurst('#d9bd70', 20);
+    this.spawnBurst('#f7f0c4', 14);
+
+    this.superJumpState = {
+      active: true,
+      elapsed: 0,
+      totalDuration,
+      phases: phaseConfig,
+      startX: this.player.fx,
+      startY: this.player.y,
+      targetX: landing.x,
+      targetY: landing.y,
+      liftHeight: GAME_CONFIG.superJump.liftHeight
+    };
+
+    for (let y = this.player.y - 8; y < landing.y + 45; y += 1) this.ensureLane(y);
+  }
+
+  updateSuperJump(dt) {
+    if (!this.superJumpState?.active) return;
+
+    const sj = this.superJumpState;
+    sj.elapsed = Math.min(sj.totalDuration, sj.elapsed + dt);
+    const t = sj.elapsed;
+    const { charge, lift, launch, settle } = sj.phases;
+    const liftStart = charge;
+    const launchStart = charge + lift;
+    const settleStart = launchStart + launch;
+    const laneDelta = sj.targetY - sj.startY;
+
+    let x = sj.startX;
+    let y = sj.startY;
+    let arc = 0;
+    let tilt = 0;
+    let stretch = 0;
+    let energy = 0;
+    let phase = 'charge';
+
+    if (t < liftStart) {
+      const p = t / charge;
+      phase = 'charge';
+      stretch = 0.1 + Math.sin(p * Math.PI) * 0.05;
+      energy = 0.35 + p * 0.3;
+      tilt = Math.sin(p * Math.PI * 4) * 0.02;
+    } else if (t < launchStart) {
+      const p = (t - liftStart) / lift;
+      phase = 'lift';
+      const eased = easeOutCubic(p);
+      y = sj.startY + laneDelta * 0.12 * eased;
+      arc = sj.liftHeight * eased;
+      stretch = 0.2 + Math.sin(p * Math.PI) * 0.1;
+      energy = 0.65 + p * 0.35;
+      tilt = 0.05 * p;
+    } else if (t < settleStart) {
+      const p = (t - launchStart) / launch;
+      phase = 'launch';
+      const eased = easeInOutCubic(p);
+      x = lerp(sj.startX, sj.targetX, eased);
+      y = sj.startY + laneDelta * (0.12 + 0.88 * eased);
+      arc = sj.liftHeight * (1 - p * 0.88);
+      stretch = 0.12 + (1 - p) * 0.16;
+      energy = 1;
+      tilt = 0.07 * (1 - p);
+      if (p > 0.15 && p < 0.85 && Math.random() < 0.35) this.spawnSuperJumpTrail();
+    } else {
+      const p = (t - settleStart) / settle;
+      phase = 'settle';
+      const eased = easeOutBack(Math.min(1, p));
+      x = lerp(sj.startX, sj.targetX, 1);
+      y = lerp(sj.startY + laneDelta, sj.targetY, Math.min(1, eased));
+      arc = Math.max(0, sj.liftHeight * 0.2 * (1 - p));
+      stretch = Math.max(0, 0.14 * (1 - p));
+      energy = 0.3 * (1 - p);
+      tilt = 0;
+    }
+
+    this.player.fx = x;
+    this.player.x = clamp(Math.round(x), 0, GAME_CONFIG.cols - 1);
+    this.player.y = y;
+    this.player.drawX = x;
+    this.player.drawY = y + arc;
+    this.player.tilt = tilt;
+    this.player.stretch = stretch;
+    this.player.superJumpEnergy = energy;
+    this.player.superJumpPhase = phase;
+
+    if (sj.elapsed >= sj.totalDuration) {
+      this.completeSuperJump();
+    }
+  }
+
+  completeSuperJump() {
+    if (!this.superJumpState?.active) return;
+    const sj = this.superJumpState;
+    this.player.fx = sj.targetX;
+    this.player.x = clamp(Math.round(sj.targetX), 0, GAME_CONFIG.cols - 1);
+    this.player.y = sj.targetY;
+    this.player.drawX = sj.targetX;
+    this.player.drawY = sj.targetY;
+    this.player.tilt = 0;
+    this.player.stretch = 0;
+    this.player.superJumpEnergy = 0;
+    this.player.superJumpPhase = 'idle';
+    this.player.visualState = 'normal';
+    this.superJumpVisualTimer = 0;
+    this.superJumpState = null;
+    this.spawnBurst('#d9bd70', 24);
+    this.spawnBurst('#9fb8aa', 10);
 
     this.handleProgressScore();
     this.collectCoinAtPlayer();
-
-    for (let y = this.player.y - 8; y < this.player.y + 45; y += 1) this.ensureLane(y);
   }
 
   findSafeLandingSpot(targetY) {
@@ -464,13 +583,19 @@ export class Game {
 
   update(dt) {
     this.time += dt;
-    this.player.drawX += (this.player.fx - this.player.drawX) * 0.45;
-    this.player.drawY += (this.player.y - this.player.drawY) * 0.34;
-    this.player.tilt *= 0.86;
-    this.player.stretch = Math.max(0, this.player.stretch - dt * 1.8);
-    if (this.player.visualState === 'superJump') {
-      this.superJumpVisualTimer = Math.max(0, this.superJumpVisualTimer - dt);
-      if (this.superJumpVisualTimer <= 0) this.player.visualState = 'normal';
+    if (this.superJumpState?.active) {
+      this.updateSuperJump(dt);
+    } else {
+      this.player.drawX += (this.player.fx - this.player.drawX) * 0.45;
+      this.player.drawY += (this.player.y - this.player.drawY) * 0.34;
+      this.player.tilt *= 0.86;
+      this.player.stretch = Math.max(0, this.player.stretch - dt * 1.8);
+      this.player.superJumpEnergy = 0;
+      this.player.superJumpPhase = 'idle';
+      if (this.player.visualState === 'superJump') {
+        this.superJumpVisualTimer = Math.max(0, this.superJumpVisualTimer - dt);
+        if (this.superJumpVisualTimer <= 0) this.player.visualState = 'normal';
+      }
     }
     this.updateParticles(dt);
     this.updateRain(dt);
@@ -531,8 +656,10 @@ export class Game {
     const minCoinY = this.player.y - 2;
     this.coins = this.coins.filter((coin) => coin.y >= minCoinY);
 
-    this.handleCollisions(dt);
-    this.collectCoinAtPlayer();
+    if (!this.superJumpState?.active) {
+      this.handleCollisions(dt);
+      this.collectCoinAtPlayer();
+    }
     if (this.shakeTimer > 0) {
       this.shakeTimer = Math.max(0, this.shakeTimer - dt);
       this.shake *= GAME_CONFIG.screenShakeDecay;
@@ -721,6 +848,20 @@ export class Game {
 
   spawnHopParticles() {
     this.spawnBurst('#97aa7f', 8);
+  }
+
+  spawnSuperJumpTrail() {
+    const trailCount = GAME_CONFIG.superJump.energy.trailCount;
+    for (let i = 0; i < trailCount; i += 1) {
+      this.particles.push({
+        x: this.player.drawX + randRange(-0.24, 0.24),
+        y: this.player.drawY - randRange(0.15, 0.45),
+        vx: randRange(-0.45, 0.45),
+        vy: randRange(-0.7, -0.1),
+        color: i % 2 === 0 ? '#fff0a8' : '#d9bd70',
+        life: GAME_CONFIG.particleLifetime * randRange(0.3, 0.75)
+      });
+    }
   }
 
   spawnBurst(color, amount) {
@@ -988,14 +1129,65 @@ export class Game {
 
     ctx.fillStyle = 'rgba(0,0,0,0.22)';
     ctx.beginPath();
-    ctx.ellipse(x + w / 2, y + h * 0.95, w * 0.4, h * 0.15, 0, 0, Math.PI * 2);
+    const shadowScale = this.superJumpState?.active ? 0.7 : 1;
+    ctx.ellipse(x + w / 2, y + h * 0.95, w * 0.4 * shadowScale, h * 0.15 * shadowScale, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    if (this.superJumpState?.active) {
+      this.drawSuperJumpEnergy(x + w / 2, y + h * 0.48, w, h, this.player.superJumpEnergy ?? 0);
+    }
 
     const sprite = this.player.visualState === 'superJump' ? this.playerSprites.superJump : this.playerSprites[this.player.facing];
     if (!this.drawSpriteWithRenderProfile(sprite, { x, y, width: w, height: h }, 'player')) {
       ctx.fillStyle = '#f4a261';
       ctx.fillRect(x, y, w, h);
     }
+
+    ctx.restore();
+  }
+
+  drawSuperJumpEnergy(cx, cy, w, h, intensity) {
+    const ctx = this.ctx;
+    const rays = GAME_CONFIG.superJump.energy.rayCount;
+    const rings = GAME_CONFIG.superJump.energy.ringCount;
+    const alpha = clamp(intensity, 0, 1);
+    if (alpha <= 0.02) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+
+    for (let i = 0; i < rays; i += 1) {
+      const ang = (Math.PI * 2 * i) / rays + this.time * 2.6;
+      const len = this.tile * (0.25 + alpha * 0.45 + Math.sin(this.time * 6 + i) * 0.03);
+      const sx = cx + Math.cos(ang) * (w * 0.12);
+      const sy = cy + Math.sin(ang) * (h * 0.1);
+      const ex = cx + Math.cos(ang) * len;
+      const ey = cy + Math.sin(ang) * len;
+      ctx.strokeStyle = `rgba(255, 237, 171, ${0.08 + alpha * 0.18})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+    }
+
+    for (let i = 0; i < rings; i += 1) {
+      const pulse = (this.time * 2.4 + i * 0.3) % 1;
+      const radius = this.tile * (0.15 + pulse * 0.32);
+      ctx.strokeStyle = `rgba(220, 189, 112, ${(1 - pulse) * 0.26 * alpha})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    const gradient = ctx.createRadialGradient(cx, cy, this.tile * 0.02, cx, cy, this.tile * 0.5);
+    gradient.addColorStop(0, `rgba(255, 244, 195, ${0.18 + alpha * 0.32})`);
+    gradient.addColorStop(1, 'rgba(255, 244, 195, 0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(cx, cy, this.tile * 0.5, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.restore();
   }
