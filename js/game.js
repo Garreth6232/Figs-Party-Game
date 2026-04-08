@@ -1,4 +1,4 @@
-import { ASSET_MANIFEST, GAME_CONFIG, GAME_STATES, STORAGE_KEYS } from './config.js';
+import { ASSET_MANIFEST, GAME_CONFIG, GAME_STATES, STANDARD_ROAD_VEHICLE_ASSET_KEY, STORAGE_KEYS } from './config.js';
 import { CollisionSystem } from './collision.js';
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
@@ -35,6 +35,8 @@ export class Game {
     this.playerSprites = {};
     this.environmentSprites = {};
     this.collectibleSprites = {};
+    this.vehicleSprites = {};
+    this.hazardSprites = {};
     this.superJumpVisualTimer = 0;
     this.collisionSystem = new CollisionSystem();
     this.resize();
@@ -71,6 +73,20 @@ export class Game {
       image.decoding = 'async';
       if (key === 'coin') this.collectibleSprites[key] = image;
       else this.environmentSprites[key] = image;
+    }
+
+    for (const [key, src] of Object.entries(ASSET_MANIFEST.vehicles)) {
+      const image = new Image();
+      image.src = src;
+      image.decoding = 'async';
+      this.vehicleSprites[key] = image;
+    }
+
+    for (const [key, src] of Object.entries(ASSET_MANIFEST.hazards)) {
+      const image = new Image();
+      image.src = src;
+      image.decoding = 'async';
+      this.hazardSprites[key] = image;
     }
   }
 
@@ -269,6 +285,28 @@ export class Game {
     const width = profile.render.width * this.tile;
     const height = profile.render.height * this.tile;
     return { x: centerX * this.tile - width / 2, y: centerY - height / 2, width, height };
+  }
+
+  drawSpriteWithRenderProfile(image, targetRect, renderProfileKey) {
+    if (!image?.complete || image.naturalWidth === 0 || image.naturalHeight === 0) return false;
+    const renderProfile = GAME_CONFIG.renderProfiles[renderProfileKey] ?? {};
+    const crop = renderProfile.crop ?? {};
+    const sx = image.naturalWidth * (crop.left ?? 0);
+    const sy = image.naturalHeight * (crop.top ?? 0);
+    const sw = image.naturalWidth * (1 - (crop.left ?? 0) - (crop.right ?? 0));
+    const sh = image.naturalHeight * (1 - (crop.top ?? 0) - (crop.bottom ?? 0));
+    if (sw <= 0 || sh <= 0) return false;
+
+    const drawWidth = targetRect.width * (renderProfile.scaleX ?? 1);
+    const drawHeight = targetRect.height * (renderProfile.scaleY ?? 1);
+    const anchor = renderProfile.anchor ?? 'center';
+    const baseX = anchor === 'topleft' ? targetRect.x : targetRect.x + (targetRect.width - drawWidth) / 2;
+    const baseY = anchor === 'topleft' ? targetRect.y : targetRect.y + (targetRect.height - drawHeight) / 2;
+    const dx = baseX + (renderProfile.offsetX ?? 0) * this.tile;
+    const dy = baseY + (renderProfile.offsetY ?? 0) * this.tile;
+
+    this.ctx.drawImage(image, sx, sy, sw, sh, dx, dy, drawWidth, drawHeight);
+    return true;
   }
 
   handleProgressScore() {
@@ -847,7 +885,10 @@ export class Game {
       const profile = this.getMovingProfile(p.type);
       const { x, y, width, height } = this.getMovingDrawRect(p, profile);
 
-      if (p.type === 'raft1') {
+      const sprite = this.hazardSprites[p.type];
+      if (this.drawSpriteWithRenderProfile(sprite, { x, y, width, height }, p.type)) {
+        // image path drawn
+      } else if (p.type === 'raft1') {
         ctx.fillStyle = '#907357';
         ctx.fillRect(x, y, width, height);
         ctx.fillStyle = '#c2ad7f';
@@ -875,27 +916,26 @@ export class Game {
       const profile = this.getMovingProfile(h.type);
       const { x, y, width, height } = this.getMovingDrawRect(h, profile);
 
-      if (h.type.startsWith('car')) {
-        ctx.fillStyle = h.type === 'car2' ? '#3d7b9a' : h.type === 'car3' ? '#9b5c3d' : '#9a4f3d';
-        ctx.fillRect(x, y, width, height);
-        ctx.fillStyle = '#cbd5e1';
-        ctx.fillRect(x + 10, y + 9, width * 0.3, 10);
-      } else if (h.type === 'scooter1') {
-        ctx.fillStyle = '#2c8f71';
-        ctx.fillRect(x, y + height * 0.35, width, height * 0.28);
-        ctx.fillStyle = '#1f2937';
-        ctx.beginPath();
-        ctx.arc(x + 8, y + height * 0.72, 4, 0, Math.PI * 2);
-        ctx.arc(x + width - 8, y + height * 0.72, 4, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (h.type === 'bike1') {
-        ctx.fillStyle = '#59685a';
-        ctx.fillRect(x, y + height * 0.35, width, height * 0.22);
+      const spriteKey = h.type === 'maxTrain' ? 'maxTrain' : STANDARD_ROAD_VEHICLE_ASSET_KEY;
+      const sprite = this.vehicleSprites[spriteKey];
+      if (this.drawSpriteWithRenderProfile(sprite, { x, y, width, height }, spriteKey)) {
+        // image path drawn
       } else {
-        ctx.fillStyle = '#1e8a5a';
-        ctx.fillRect(x, y, width, height);
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(x + 14, y + 10, width * 0.6, 8);
+        if (h.type.startsWith('car')) {
+          ctx.fillStyle = '#9a4f3d';
+          ctx.fillRect(x, y, width, height);
+          ctx.fillStyle = '#cbd5e1';
+          ctx.fillRect(x + 10, y + 9, width * 0.3, 10);
+        } else if (h.type === 'scooter1') {
+          ctx.fillStyle = '#2c8f71';
+          ctx.fillRect(x, y + height * 0.35, width, height * 0.28);
+        } else if (h.type === 'bike1') {
+          ctx.fillStyle = '#59685a';
+          ctx.fillRect(x, y + height * 0.35, width, height * 0.22);
+        } else {
+          ctx.fillStyle = '#1e8a5a';
+          ctx.fillRect(x, y, width, height);
+        }
       }
 
       ctx.fillStyle = 'rgba(0,0,0,0.22)';
@@ -913,7 +953,11 @@ export class Game {
       const cy = pos.y + this.tile * (0.45 + GAME_CONFIG.alignment.collectible.renderOffsetY) + bob;
       const drawSize = this.tile * 0.34;
       if (coinSprite?.complete) {
-        ctx.drawImage(coinSprite, cx - drawSize / 2, cy - drawSize / 2, drawSize, drawSize);
+        this.drawSpriteWithRenderProfile(
+          coinSprite,
+          { x: cx - drawSize / 2, y: cy - drawSize / 2, width: drawSize, height: drawSize },
+          'coin'
+        );
       } else {
         const r = this.tile * 0.16;
         ctx.fillStyle = '#e5c15f';
@@ -948,8 +992,7 @@ export class Game {
     ctx.fill();
 
     const sprite = this.player.visualState === 'superJump' ? this.playerSprites.superJump : this.playerSprites[this.player.facing];
-    if (sprite && sprite.complete) ctx.drawImage(sprite, x, y, w, h);
-    else {
+    if (!this.drawSpriteWithRenderProfile(sprite, { x, y, width: w, height: h }, 'player')) {
       ctx.fillStyle = '#f4a261';
       ctx.fillRect(x, y, w, h);
     }

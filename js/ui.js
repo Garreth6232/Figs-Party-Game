@@ -30,6 +30,7 @@ export class UIController {
     this.startBtn = document.getElementById('startBtn');
     this.resumeBtn = document.getElementById('resumeBtn');
     this.restartBtn = document.getElementById('restartBtn');
+    this.enterNameBtn = document.getElementById('enterNameBtn');
     this.closeInfoBtn = document.getElementById('closeInfoBtn');
     this.debugBtn = document.getElementById('debugBtn');
     this.debugAuthBackBtn = document.getElementById('debugAuthBackBtn');
@@ -46,6 +47,7 @@ export class UIController {
 
     this.initialsInput = document.getElementById('initialsInput');
     this.initialsSaveBtn = document.getElementById('initialsSaveBtn');
+    this.initialsSkipBtn = document.getElementById('initialsSkipBtn');
     this.initialsScoreEl = document.getElementById('initialsScoreValue');
     this.initialsHint = document.getElementById('initialsHint');
 
@@ -63,6 +65,8 @@ export class UIController {
     this.toastTimer = null;
     this.onHitboxesToggle = null;
     this.onInitialsSubmit = null;
+    this.onInitialsSkip = null;
+    this.onEnterName = null;
     this.debugUnlocked = false;
 
     this.renderAssetGuide();
@@ -112,6 +116,7 @@ export class UIController {
     });
 
     this.initialsSaveBtn?.addEventListener('click', () => this.submitInitials());
+    this.initialsSkipBtn?.addEventListener('click', () => this.onInitialsSkip?.());
   }
 
   submitInitials() {
@@ -122,6 +127,15 @@ export class UIController {
 
   setInitialsSubmitHandler(handler) {
     this.onInitialsSubmit = handler;
+  }
+
+  setInitialsSkipHandler(handler) {
+    this.onInitialsSkip = handler;
+  }
+
+  setGameOverHandlers({ onEnterName } = {}) {
+    this.onEnterName = onEnterName ?? null;
+    this.enterNameBtn?.addEventListener('click', () => this.onEnterName?.());
   }
 
   setLeaderboardHandlers({ onOpenLeaderboard, onCloseLeaderboard }) {
@@ -145,6 +159,8 @@ export class UIController {
     this.showInfoMain();
     if (this.debugPasswordInput) this.debugPasswordInput.value = '';
     if (this.debugAuthError) this.debugAuthError.textContent = '';
+    if (this.infoList) this.infoList.scrollTop = 0;
+    if (this.debugAssetBrowser) this.debugAssetBrowser.scrollTop = 0;
   }
 
   showInfoMain() {
@@ -334,12 +350,15 @@ export class UIController {
     }
   }
 
-  showGameOver(score, message) {
+  showGameOver(score, message, { canEnterName = false } = {}) {
     this.hideAllOverlays();
     this.messageEl.textContent = `${message} Final score: ${score}.`;
+    this.enterNameBtn?.classList.toggle('hidden', !canEnterName);
+    if (this.restartBtn) this.restartBtn.textContent = canEnterName ? 'New Game' : 'Play Again';
     this.gameOverScreen.classList.remove('hidden');
     this.gameOverScreen.setAttribute('aria-hidden', 'false');
-    this.restartBtn?.focus();
+    if (canEnterName) this.enterNameBtn?.focus();
+    else this.restartBtn?.focus();
   }
 
   showInitialsEntry(score) {
