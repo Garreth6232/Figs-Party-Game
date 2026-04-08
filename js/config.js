@@ -243,7 +243,17 @@ export const ASSET_METADATA = [
     label: 'Food Cart',
     description: 'Decorative city food cart prop rendered on road lanes.',
     interactionType: 'ignore',
-    visibleInInfoMenu: false,
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'benson1',
+    path: 'assets/environment/benson1.png',
+    category: 'props',
+    label: 'Benson Kiosk',
+    description: 'Street dressing prop that alternates with food carts on road lanes.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: true,
     visibleInDevAssetBrowser: true
   },
   {
@@ -280,7 +290,7 @@ export const ASSET_MANIFEST = {
   vehicles: buildAssetGroup(['car1', 'car2', 'car3', 'bike1', 'scooter1', 'maxTrain']),
   hazards: buildAssetGroup(['log1', 'raft1', 'kayak1']),
   collectibles: buildAssetGroup(['coin']),
-  environment: buildAssetGroup(['grassTile', 'riverTile', 'roadTile', 'railTile', 'sidewalkTile', 'bridgeTile', 'tree1', 'foodCart']),
+  environment: buildAssetGroup(['grassTile', 'riverTile', 'roadTile', 'railTile', 'sidewalkTile', 'bridgeTile', 'tree1', 'foodCart', 'benson1']),
   ui: buildAssetGroup(['superJumpReady']),
   warnings: buildAssetGroup(['trainWarning']),
   audio: {
@@ -416,7 +426,22 @@ export const GAME_CONFIG = {
     baseWorldUnits: { width: 1, height: 1 },
     roadShoulderHeightRatio: 0.14,
     snapToPixels: true,
-    overlapPx: 1
+    overlapPx: 1,
+    grass: {
+      stripHeightRatio: 0.56,
+      stripDriftSpeed: 0.02,
+      grainAlpha: 0.08
+    },
+    water: {
+      tileHeightRatio: 0.9,
+      flowSpeed: 0.08,
+      foamAlpha: 0.22
+    },
+    rail: {
+      ballastHeightRatio: 0.82,
+      tieCount: 8,
+      trackGaugeRatio: 0.36
+    }
   },
   coinVisuals: {
     bobAmplitudeRatio: 0.05,

@@ -30,7 +30,8 @@
     "sidewalkTile": "assets/environment/SidewalkTile.jpg",
     "bridgeTile": "assets/environment/bridgeTile.svg",
     "tree1": "assets/environment/tree1.png",
-    "foodCart": "assets/environment/foodcart.png"
+    "foodCart": "assets/environment/foodcart.png",
+    "benson1": "assets/environment/benson1.png"
   },
   "ui": {
     "superJumpReady": "assets/ui/superJumpReady.svg"
