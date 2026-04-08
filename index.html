@@ -18,58 +18,72 @@
   </head>
   <body>
     <div class="game-shell">
-      <header class="hud">
+      <header class="hud" role="banner">
         <div class="brand">
           <h1>Neon Hopper Rush</h1>
           <p>Endless lane survival</p>
         </div>
-        <div class="stats">
-          <div><span>Score</span><strong id="scoreValue">0</strong></div>
-          <div><span>Best</span><strong id="bestValue">0</strong></div>
-          <button id="muteBtn" class="icon-btn" aria-label="Toggle sound">🔊</button>
+
+        <div class="stats" aria-label="Game stats">
+          <div class="stat-card" id="scoreCard">
+            <span>Score</span>
+            <strong id="scoreValue" aria-live="polite">0</strong>
+          </div>
+          <div class="stat-card" id="bestCard">
+            <span>Best</span>
+            <strong id="bestValue" aria-live="polite">0</strong>
+          </div>
+          <button id="muteBtn" class="icon-btn" type="button" aria-label="Toggle sound" aria-pressed="false">🔊</button>
         </div>
       </header>
 
-      <main class="canvas-wrap">
+      <main class="canvas-wrap" aria-label="Game board">
         <canvas id="gameCanvas" width="900" height="1400" aria-label="Game canvas"></canvas>
 
-        <section id="startScreen" class="overlay show">
-          <div class="card">
-            <h2>Hop. Dodge. Survive.</h2>
+        <section id="startScreen" class="overlay show" aria-labelledby="startTitle">
+          <div class="card" role="dialog" aria-modal="true">
+            <h2 id="startTitle">Hop. Dodge. Survive.</h2>
             <p>
               Move across dangerous lanes, thread near-misses, and push your high score. Keyboard and touch supported.
             </p>
-            <div class="controls-list">
+            <div class="controls-list" aria-label="Controls">
               <p><kbd>WASD</kbd> / <kbd>Arrows</kbd> to move</p>
               <p><kbd>P</kbd> or <kbd>Esc</kbd> to pause</p>
+              <p class="hint">Tip: Near-miss road traffic for bonus points.</p>
             </div>
-            <button id="startBtn" class="primary">Start Run</button>
+            <div class="menu-actions">
+              <button id="startBtn" class="primary" type="button" autofocus>Start Run</button>
+            </div>
           </div>
         </section>
 
-        <section id="pauseScreen" class="overlay hidden">
-          <div class="card small">
-            <h2>Paused</h2>
+        <section id="pauseScreen" class="overlay hidden" aria-labelledby="pauseTitle">
+          <div class="card small" role="dialog" aria-modal="true">
+            <h2 id="pauseTitle">Paused</h2>
             <p>Take a breath. Press <kbd>P</kbd> to continue.</p>
-            <button id="resumeBtn" class="primary">Resume</button>
+            <div class="menu-actions">
+              <button id="resumeBtn" class="primary" type="button">Resume</button>
+            </div>
           </div>
         </section>
 
-        <section id="gameOverScreen" class="overlay hidden">
-          <div class="card">
-            <h2>Run Over</h2>
+        <section id="gameOverScreen" class="overlay hidden" aria-labelledby="gameOverTitle">
+          <div class="card" role="dialog" aria-modal="true">
+            <h2 id="gameOverTitle">Run Over</h2>
             <p id="gameOverMessage">You reached lane 0.</p>
-            <button id="restartBtn" class="primary">Play Again</button>
+            <div class="menu-actions">
+              <button id="restartBtn" class="primary" type="button">Play Again</button>
+            </div>
           </div>
         </section>
       </main>
 
       <nav class="touch-controls" aria-label="Touch controls">
-        <button data-dir="up">▲</button>
+        <button data-dir="up" type="button" aria-label="Move up">▲</button>
         <div class="middle-row">
-          <button data-dir="left">◀</button>
-          <button data-dir="down">▼</button>
-          <button data-dir="right">▶</button>
+          <button data-dir="left" type="button" aria-label="Move left">◀</button>
+          <button data-dir="down" type="button" aria-label="Move down">▼</button>
+          <button data-dir="right" type="button" aria-label="Move right">▶</button>
         </div>
       </nav>
     </div>

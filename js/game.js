@@ -43,13 +43,15 @@ export class Game {
       y: GAME_CONFIG.startY,
       drawX: Math.floor(GAME_CONFIG.cols / 2),
       drawY: GAME_CONFIG.startY,
-      stretch: 0
+      stretch: 0,
+      tilt: 0
     };
     this.score = 0;
     this.maxY = this.player.y;
     this.hazards = [];
     this.particles = [];
     this.nearMisses = new Set();
+    this.lastNearMissAt = 0;
     this.lastMoveAt = 0;
     this.time = 0;
     this.cameraY = this.player.y - 3;
@@ -93,43 +95,52 @@ export class Game {
     ny = Math.max(-2, ny);
     if (nx === this.player.x && ny === this.player.y) return;
 
+    const dx = nx - this.player.x;
+
     this.player.x = nx;
     this.player.y = ny;
+    this.player.tilt = dx * 0.22;
     this.player.stretch = 0.16;
     this.spawnHopParticles();
     this.audio.play('hop');
     this.lastMoveAt = now;
 
     if (this.player.y > this.maxY) {
+      const gained = this.player.y - this.maxY;
       this.maxY = this.player.y;
-      this.score = this.maxY - GAME_CONFIG.startY;
-      this.ui.updateScore(this.score);
+      this.score += gained;
+      const bestPulse = this.updateBestIfNeeded();
+      this.ui.updateScore(this.score, { pulse: true, bestPulse });
       this.audio.play('score');
-      if (this.score > this.best) {
-        this.best = this.score;
-        localStorage.setItem(STORAGE_KEYS.bestScore, String(this.best));
-        this.ui.updateBest(this.best);
-      }
+      this.spawnBurst('#22d3ee', 10);
     }
 
     for (let y = this.player.y - 8; y < this.player.y + 40; y += 1) this.ensureLane(y);
+  }
+
+  updateBestIfNeeded() {
+    if (this.score <= this.best) return false;
+    this.best = this.score;
+    localStorage.setItem(STORAGE_KEYS.bestScore, String(this.best));
+    this.ui.updateBest(this.best);
+    return true;
   }
 
   ensureLane(y) {
     if (this.laneCache.has(y)) return;
     const type = y <= 0 ? 'grass' : weightedLaneType(GAME_CONFIG.laneWeights);
     const direction = Math.random() > 0.5 ? 1 : -1;
-    const lane = { y, type, direction, speed: 0, density: 0, timer: 0, interval: 2 };
+    const lane = { y, type, direction, speed: 0, timer: 0, interval: 2, seed: Math.random() * 1000 };
 
     if (type === 'road') {
-      lane.speed = randRange(1.6, 3.4) + this.score * 0.018;
-      lane.interval = randRange(1.6, 2.6);
+      lane.speed = randRange(1.45, 2.95) + this.score * 0.012;
+      lane.interval = randRange(1.75, 2.85);
     } else if (type === 'water') {
-      lane.speed = randRange(1.1, 2.2);
-      lane.interval = randRange(1.8, 3.2);
+      lane.speed = randRange(0.95, 1.95);
+      lane.interval = randRange(1.95, 3.25);
     } else if (type === 'rail') {
-      lane.speed = randRange(5.6, 7.3) + this.score * 0.04;
-      lane.interval = randRange(4.2, 6.7);
+      lane.speed = randRange(4.9, 6.8) + this.score * 0.03;
+      lane.interval = randRange(4.6, 7.6);
     }
     this.laneCache.set(y, lane);
   }
@@ -141,6 +152,7 @@ export class Game {
       id: this.nextHazardId++,
       type: lane.type === 'water' ? 'log' : lane.type === 'rail' ? 'train' : 'car',
       x: startX,
+      prevX: startX,
       y: lane.y,
       dir: lane.direction,
       speed: lane.speed,
@@ -152,27 +164,35 @@ export class Game {
 
   update(dt) {
     this.time += dt;
-    this.player.drawX += (this.player.x - this.player.drawX) * 0.32;
-    this.player.drawY += (this.player.y - this.player.drawY) * 0.32;
-    this.player.stretch = Math.max(0, this.player.stretch - dt * 1.8);
+    this.player.drawX += (this.player.x - this.player.drawX) * 0.34;
+    this.player.drawY += (this.player.y - this.player.drawY) * 0.34;
+    this.player.tilt *= 0.86;
+    this.player.stretch = Math.max(0, this.player.stretch - dt * 1.9);
 
     if (this.state !== 'running') return;
 
     this.cameraY += (this.player.y - 3 - this.cameraY) * GAME_CONFIG.cameraLerp;
 
-    const difficulty = 1 + Math.floor(this.score / GAME_CONFIG.difficultyRampEvery) * 0.08;
+    const stage = this.score / GAME_CONFIG.difficultyRampEvery;
+    const difficulty = clamp(1 + stage * 0.06 + Math.sqrt(stage) * 0.05, 1, 2.35);
 
     for (const lane of this.laneCache.values()) {
       if (lane.type === 'grass') continue;
       lane.timer += dt;
-      const interval = Math.max(0.85, lane.interval / difficulty);
+      let minInterval = 1.1;
+      if (lane.type === 'water') minInterval = 1.45;
+      if (lane.type === 'rail') minInterval = 3.35;
+      const interval = Math.max(minInterval, lane.interval / difficulty);
       if (lane.timer >= interval) {
         lane.timer = 0;
         this.spawnHazard(lane);
       }
     }
 
-    for (const hazard of this.hazards) hazard.x += hazard.speed * hazard.dir * dt;
+    for (const hazard of this.hazards) {
+      hazard.prevX = hazard.x;
+      hazard.x += hazard.speed * hazard.dir * dt;
+    }
     this.hazards = this.hazards.filter((h) => h.x > -5 && h.x < GAME_CONFIG.cols + 5);
 
     this.handleCollisions();
@@ -182,38 +202,58 @@ export class Game {
 
   handleCollisions() {
     const lane = this.laneCache.get(this.player.y);
-    const laneHazards = this.hazards.filter((h) => Math.abs(h.y - this.player.y) < 0.2);
+    if (!lane) return;
 
-    if (lane?.type === 'water') {
-      const carryingLog = laneHazards.find((h) => h.type === 'log' && Math.abs(h.x - this.player.x) < (h.w + 0.5) / 2);
-      if (carryingLog) {
-        this.player.drawX += carryingLog.speed * carryingLog.dir * 0.012;
-        this.player.x = clamp(Math.round(this.player.drawX), 0, GAME_CONFIG.cols - 1);
-      } else {
-        this.kill('You fell into the current.');
-        return;
+    let logUnderPlayer = null;
+
+    for (const h of this.hazards) {
+      if (Math.abs(h.y - this.player.y) > 0.2) continue;
+
+      const playerRadius = 0.23;
+      const hazardRadius = h.w * 0.5;
+      const nowGap = Math.abs(h.x - this.player.drawX);
+      const minX = Math.min(h.prevX, h.x) - playerRadius;
+      const maxX = Math.max(h.prevX, h.x) + playerRadius;
+      const sweptHit = this.player.drawX >= minX - hazardRadius && this.player.drawX <= maxX + hazardRadius;
+
+      if (h.type === 'log') {
+        if (nowGap < hazardRadius + 0.26) {
+          logUnderPlayer = h;
+        }
+        continue;
       }
-    }
 
-    for (const h of laneHazards) {
-      if (h.type === 'log') continue;
-      const hitX = Math.abs(h.x - this.player.x) <= (h.w + 0.52) / 2;
-      if (hitX) {
+      if (nowGap <= hazardRadius + playerRadius || sweptHit) {
         this.kill(h.type === 'train' ? 'A mag-rail slammed through.' : 'Traffic clipped your run.');
         return;
       }
-      const near = Math.abs(h.x - this.player.x);
-      if (near < 0.9 && !this.nearMisses.has(h.id) && this.state === 'running' && lane?.type === 'road') {
-        this.nearMisses.add(h.id);
-        this.score += 1;
-        this.maxY += 1;
-        this.ui.updateScore(this.score);
-        if (this.score > this.best) {
-          this.best = this.score;
-          localStorage.setItem(STORAGE_KEYS.bestScore, String(this.best));
-          this.ui.updateBest(this.best);
+
+      if (lane.type === 'road') {
+        const nearWindow = 0.8;
+        const near = Math.abs(h.x - this.player.x);
+        const now = performance.now();
+        if (near < nearWindow && !this.nearMisses.has(h.id) && now - this.lastNearMissAt > 120) {
+          this.nearMisses.add(h.id);
+          this.lastNearMissAt = now;
+          this.score += 1;
+          const bestPulse = this.updateBestIfNeeded();
+          this.ui.updateScore(this.score, { pulse: true, bestPulse });
+          this.spawnBurst('#22d3ee', 12);
+          this.audio.play('score');
         }
-        this.spawnBurst('#22d3ee', 12);
+      }
+    }
+
+    if (lane.type === 'water') {
+      if (!logUnderPlayer) {
+        this.kill('You fell into the current.');
+        return;
+      }
+      const rideStep = logUnderPlayer.speed * logUnderPlayer.dir * 0.014;
+      this.player.drawX = clamp(this.player.drawX + rideStep, 0, GAME_CONFIG.cols - 1);
+      this.player.x = clamp(Math.round(this.player.drawX), 0, GAME_CONFIG.cols - 1);
+      if (this.player.drawX <= 0.05 || this.player.drawX >= GAME_CONFIG.cols - 1.05) {
+        this.kill('The river swept you away.');
       }
     }
   }
@@ -223,12 +263,12 @@ export class Game {
     this.state = 'dead';
     this.audio.play('hit');
     this.shake = GAME_CONFIG.screenShakeMax;
-    this.spawnBurst('#f87171', 26);
+    this.spawnBurst('#f87171', 28);
     this.ui.showGameOver(this.score, message);
   }
 
   spawnHopParticles() {
-    this.spawnBurst('#f59e0b', 6);
+    this.spawnBurst('#f59e0b', 7);
   }
 
   spawnBurst(color, amount) {
@@ -237,7 +277,7 @@ export class Game {
         x: this.player.drawX + randRange(-0.3, 0.3),
         y: this.player.drawY + randRange(-0.2, 0.2),
         vx: randRange(-0.7, 0.7),
-        vy: randRange(-1.5, -0.3),
+        vy: randRange(-1.6, -0.25),
         color,
         life: GAME_CONFIG.particleLifetime * randRange(0.6, 1.2)
       });
@@ -289,9 +329,13 @@ export class Game {
       ctx.fillStyle = GAME_CONFIG.lanePalette[lane.type];
       ctx.fillRect(0, pos.y, this.worldWidth, this.tile + 1);
 
+      ctx.fillStyle = 'rgba(255,255,255,0.04)';
+      ctx.fillRect(0, pos.y, this.worldWidth, 2);
+
       if (lane.type === 'road') {
         ctx.strokeStyle = 'rgba(255,255,255,0.24)';
         ctx.setLineDash([14, 18]);
+        ctx.lineDashOffset = -(this.time * 64 * lane.direction);
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(0, pos.y + this.tile / 2);
@@ -302,7 +346,7 @@ export class Game {
       if (lane.type === 'water') {
         ctx.fillStyle = 'rgba(255,255,255,0.08)';
         for (let i = 0; i < 4; i += 1) {
-          const waveY = pos.y + 12 + i * 22 + Math.sin(this.time * 2 + i + y) * 4;
+          const waveY = pos.y + 12 + i * 22 + Math.sin(this.time * 2.5 + i + lane.seed) * 4;
           ctx.fillRect(0, waveY, this.worldWidth, 4);
         }
       }
@@ -345,6 +389,11 @@ export class Game {
     const x = pos.x + (this.tile - w) / 2;
     const y = pos.y + (this.tile - h) / 2;
 
+    ctx.save();
+    ctx.translate(x + w / 2, y + h / 2);
+    ctx.rotate(this.player.tilt);
+    ctx.translate(-(x + w / 2), -(y + h / 2));
+
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.beginPath();
     ctx.ellipse(x + w / 2, y + h * 0.95, w * 0.42, h * 0.16, 0, 0, Math.PI * 2);
@@ -356,6 +405,7 @@ export class Game {
     ctx.fillRect(x + w * 0.2, y + h * 0.25, w * 0.12, h * 0.12);
     ctx.fillRect(x + w * 0.68, y + h * 0.25, w * 0.12, h * 0.12);
     ctx.fillRect(x + w * 0.36, y + h * 0.6, w * 0.28, h * 0.08);
+    ctx.restore();
   }
 
   drawParticles() {
@@ -363,7 +413,9 @@ export class Game {
     for (const p of this.particles) {
       const pos = this.worldToScreen(p.x, p.y);
       const alpha = Math.max(0, p.life / GAME_CONFIG.particleLifetime);
-      ctx.fillStyle = `${p.color}${Math.floor(alpha * 255).toString(16).padStart(2, '0')}`;
+      ctx.fillStyle = `${p.color}${Math.floor(alpha * 255)
+        .toString(16)
+        .padStart(2, '0')}`;
       ctx.fillRect(pos.x + this.tile * 0.45, pos.y + this.tile * 0.45, 4, 4);
     }
   }

@@ -16,6 +16,7 @@ const resumeBtn = document.getElementById('resumeBtn');
 
 const syncMuteButton = () => {
   muteBtn.textContent = audio.isMuted ? '🔇' : '🔊';
+  muteBtn.setAttribute('aria-pressed', String(audio.isMuted));
 };
 syncMuteButton();
 

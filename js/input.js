@@ -16,10 +16,13 @@ export class InputManager {
     this.onMove = onMove;
     this.onPause = onPause;
     this.swipeStart = null;
+    this.holdInterval = null;
+    this.holdDir = null;
   }
 
   bind() {
     window.addEventListener('keydown', (event) => {
+      if (event.repeat) return;
       if (event.code === 'KeyP' || event.code === 'Escape') {
         this.onPause();
         return;
@@ -32,18 +35,25 @@ export class InputManager {
     });
 
     this.touchContainer.querySelectorAll('button[data-dir]').forEach((btn) => {
-      btn.addEventListener('pointerdown', () => this.onMove(btn.dataset.dir));
+      btn.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        this.startHold(btn.dataset.dir);
+      });
+      btn.addEventListener('pointerup', () => this.stopHold());
+      btn.addEventListener('pointercancel', () => this.stopHold());
+      btn.addEventListener('pointerleave', () => this.stopHold());
     });
 
     this.canvas.addEventListener('pointerdown', (event) => {
       this.swipeStart = { x: event.clientX, y: event.clientY };
     });
+
     this.canvas.addEventListener('pointerup', (event) => {
       if (!this.swipeStart) return;
       const dx = event.clientX - this.swipeStart.x;
       const dy = event.clientY - this.swipeStart.y;
       this.swipeStart = null;
-      const threshold = 30;
+      const threshold = 24;
       if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) return;
       if (Math.abs(dx) > Math.abs(dy)) {
         this.onMove(dx > 0 ? 'right' : 'left');
@@ -51,5 +61,25 @@ export class InputManager {
         this.onMove(dy > 0 ? 'down' : 'up');
       }
     });
+    this.canvas.addEventListener('pointercancel', () => {
+      this.swipeStart = null;
+    });
+  }
+
+  startHold(dir) {
+    this.stopHold();
+    this.holdDir = dir;
+    this.onMove(dir);
+    this.holdInterval = setInterval(() => {
+      this.onMove(this.holdDir);
+    }, 120);
+  }
+
+  stopHold() {
+    this.holdDir = null;
+    if (this.holdInterval) {
+      clearInterval(this.holdInterval);
+      this.holdInterval = null;
+    }
   }
 }
