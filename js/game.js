@@ -1,4 +1,4 @@
-import { ASSET_MANIFEST, GAME_CONFIG, GAME_STATES, STANDARD_ROAD_VEHICLE_ASSET_KEY, STORAGE_KEYS } from './config.js';
+import { ASSET_MANIFEST, GAME_CONFIG, GAME_STATES, LANE_DEFINITIONS, STANDARD_ROAD_VEHICLE_ASSET_KEY, STORAGE_KEYS } from './config.js';
 import { CollisionSystem } from './collision.js';
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
@@ -30,6 +30,8 @@ const DEFAULT_MOVING_PROFILE = {
   render: { width: 1, height: 0.6, offsetX: 0, offsetY: 0 },
   collision: { type: 'car', width: 1, height: 0.5, offsetX: 0, offsetY: 0 }
 };
+
+const DEFAULT_LANE_TYPE = 'grass';
 
 export class Game {
   constructor({ canvas, audio, ui, onGameOver = null }) {
@@ -457,19 +459,56 @@ export class Game {
     return y <= GAME_CONFIG.safeZones.guaranteedSafeRows;
   }
 
+  getLaneDefinition(laneType) {
+    return LANE_DEFINITIONS[laneType] ?? LANE_DEFINITIONS[DEFAULT_LANE_TYPE];
+  }
+
+  laneSupportsHazards(lane) {
+    return this.getLaneDefinition(lane?.type).allowedHazards.length > 0;
+  }
+
+  laneSupportsPlatforms(lane) {
+    return this.getLaneDefinition(lane?.type).allowedPlatforms.length > 0;
+  }
+
+  isHazardCompatibleWithLane(hazard) {
+    const lane = this.laneCache.get(hazard.y);
+    if (!lane) return false;
+    const laneDef = this.getLaneDefinition(lane.type);
+    return laneDef.allowedHazards.includes(hazard.type);
+  }
+
+  isPlatformCompatibleWithLane(platform) {
+    const lane = this.laneCache.get(platform.y);
+    if (!lane) return false;
+    const laneDef = this.getLaneDefinition(lane.type);
+    return laneDef.allowedPlatforms.includes(platform.type);
+  }
+
   ensureLane(y) {
     if (this.laneCache.has(y)) return;
 
-    const type = this.isLaneSafeForSpawn(y) ? 'grass' : weightedLaneType(GAME_CONFIG.laneWeights);
+    const weightedType = this.isLaneSafeForSpawn(y) ? DEFAULT_LANE_TYPE : weightedLaneType(GAME_CONFIG.laneWeights);
+    const type = this.getLaneDefinition(weightedType).key;
     const direction = Math.random() > 0.5 ? 1 : -1;
-    const lane = { y, type, direction, speed: 0, timer: 0, interval: 2, seed: Math.random() * 1000, warningActive: false };
+    const lane = {
+      y,
+      type,
+      direction,
+      speed: 0,
+      timer: 0,
+      interval: 2,
+      seed: Math.random() * 1000,
+      warningActive: false,
+      surface: this.getLaneDefinition(type).surface
+    };
 
     if (type === 'road') {
       lane.speed = randRange(1.35, 2.7) + this.score * 0.012;
       lane.interval = randRange(1.75, 2.8);
     } else if (type === 'water') {
       lane.speed = randRange(GAME_CONFIG.riverPlatforms.minSpeed, GAME_CONFIG.riverPlatforms.maxSpeed);
-      lane.platformType = randomFrom(GAME_CONFIG.riverPlatforms.laneTypes);
+      lane.platformType = randomFrom(this.getLaneDefinition(type).allowedPlatforms);
       const platformW = this.getMovingProfile(lane.platformType).render.width;
       const maxIntervalByGap = GAME_CONFIG.riverPlatforms.maxGapSeconds - platformW / lane.speed;
       lane.interval = clamp(
@@ -509,9 +548,10 @@ export class Game {
   }
 
   spawnHazard(lane) {
-    if (lane.type === 'grass' || lane.type === 'water') return;
+    const laneDef = this.getLaneDefinition(lane?.type);
+    if (laneDef.allowedHazards.length === 0) return;
     const startX = lane.direction > 0 ? -1.4 : GAME_CONFIG.cols + 1.4;
-    const vehicleType = lane.type === 'rail' ? 'maxTrain' : randomFrom(['car1', 'car2', 'car3', 'scooter1', 'bike1']);
+    const vehicleType = randomFrom(laneDef.allowedHazards);
     const profile = this.getMovingProfile(vehicleType);
     const h = {
       id: this.nextHazardId++,
@@ -528,8 +568,9 @@ export class Game {
   }
 
   spawnPlatform(lane) {
-    if (lane.type !== 'water') return;
-    const platformType = lane.platformType ?? randomFrom(GAME_CONFIG.riverPlatforms.laneTypes);
+    const laneDef = this.getLaneDefinition(lane?.type);
+    if (laneDef.allowedPlatforms.length === 0) return;
+    const platformType = lane.platformType ?? randomFrom(laneDef.allowedPlatforms);
     const startX = lane.direction > 0 ? -1.2 : GAME_CONFIG.cols + 1.2;
     const profile = this.getMovingProfile(platformType);
     this.platforms.push({
@@ -552,7 +593,7 @@ export class Game {
       const y = this.player.y + Math.floor(randRange(GAME_CONFIG.coins.spawnAheadMin, GAME_CONFIG.coins.spawnAheadMax));
       this.ensureLane(y);
       const lane = this.laneCache.get(y);
-      if (!lane || lane.type !== 'grass') continue;
+      if (!lane || !this.getLaneDefinition(lane.type).allowsCoins) continue;
 
       const x = Math.floor(randRange(0, GAME_CONFIG.cols));
       const occupied = this.coins.some((coin) => coin.x === x && Math.abs(coin.y - y) < 2);
@@ -614,10 +655,10 @@ export class Game {
     const difficulty = clamp(1 + stage * 0.06 + Math.sqrt(stage) * 0.05, 1, 2.35);
 
     for (const lane of this.laneCache.values()) {
-      if (lane.type === 'grass') continue;
+      if (!this.laneSupportsHazards(lane) && !this.laneSupportsPlatforms(lane)) continue;
       lane.timer += dt;
       let minInterval = 1.1;
-      if (lane.type === 'water') minInterval = GAME_CONFIG.riverPlatforms.minInterval;
+      if (this.laneSupportsPlatforms(lane)) minInterval = GAME_CONFIG.riverPlatforms.minInterval;
       if (lane.type === 'rail') minInterval = 3.35;
       const interval = Math.max(minInterval, lane.interval / difficulty);
 
@@ -633,8 +674,8 @@ export class Game {
       if (lane.timer >= interval) {
         lane.timer = 0;
         lane.warningActive = false;
-        if (lane.type === 'water') this.spawnPlatform(lane);
-        else this.spawnHazard(lane);
+        if (this.laneSupportsPlatforms(lane)) this.spawnPlatform(lane);
+        else if (this.laneSupportsHazards(lane)) this.spawnHazard(lane);
       }
     }
 
@@ -649,13 +690,13 @@ export class Game {
       hazard.x += hazard.speed * hazard.dir * dt;
       this.maybeTriggerTrainPassShake(hazard);
     }
-    this.hazards = this.hazards.filter((h) => h.x > -5 && h.x < GAME_CONFIG.cols + 5);
+    this.hazards = this.hazards.filter((h) => this.isHazardCompatibleWithLane(h) && h.x > -5 && h.x < GAME_CONFIG.cols + 5);
 
     for (const platform of this.platforms) {
       platform.prevX = platform.x;
       platform.x += platform.speed * platform.dir * dt;
     }
-    this.platforms = this.platforms.filter((p) => p.x > -5 && p.x < GAME_CONFIG.cols + 5);
+    this.platforms = this.platforms.filter((p) => this.isPlatformCompatibleWithLane(p) && p.x > -5 && p.x < GAME_CONFIG.cols + 5);
 
     this.updateRiverAttachment(dt);
 
@@ -1031,13 +1072,12 @@ export class Game {
 
     ctx.fillStyle = '#5b5e51';
     ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
-    const railTile = this.environmentSprites.railTile;
-    if (railTile?.complete && railTile.naturalWidth && railTile.naturalHeight) {
-      ctx.drawImage(railTile, 0, 0, railTile.naturalWidth, railTile.naturalHeight, 0, ballastY, this.worldWidth, ballastHeight);
-    } else {
-      ctx.fillStyle = '#676b5a';
-      ctx.fillRect(0, ballastY, this.worldWidth, ballastHeight);
-    }
+    this.drawLaneTexture(this.environmentSprites.railTile, {
+      y: ballastY,
+      laneY: laneIndex,
+      height: ballastHeight,
+      fallbackColor: '#676b5a'
+    });
 
     ctx.fillStyle = 'rgba(30, 33, 29, 0.5)';
     ctx.fillRect(0, ballastY, this.worldWidth, 2);
@@ -1083,16 +1123,17 @@ export class Game {
     for (let y = from; y <= to; y += 1) {
       this.ensureLane(y);
       const lane = this.laneCache.get(y);
+      const laneDef = this.getLaneDefinition(lane.type);
       const laneY = this.getLaneScreenY(y);
       const laneHeight = this.getLaneScreenHeight();
-      ctx.fillStyle = GAME_CONFIG.lanePalette[lane.type];
+      ctx.fillStyle = GAME_CONFIG.lanePalette[laneDef.key];
       ctx.fillRect(0, laneY, this.worldWidth, laneHeight + 1);
 
-      if (lane.type === 'road') {
-        const roadTile = this.environmentSprites.roadTile;
-        const sidewalkTile = this.environmentSprites.sidewalkTile;
+      if (laneDef.renderMode === 'road') {
+        const roadTile = this.environmentSprites[laneDef.surface];
+        const sidewalkTile = this.environmentSprites[laneDef.shoulderSurface];
 
-        this.drawLaneTexture(roadTile, { y: laneY, laneY: y, height: laneHeight, fallbackColor: '#505962' });
+        this.drawLaneTexture(roadTile, { y: laneY, laneY: y, height: laneHeight, fallbackColor: laneDef.fallbackColor });
 
         const shoulderHeight = Math.max(1, Math.round(laneHeight * GAME_CONFIG.environmentTiles.roadShoulderHeightRatio));
         if (sidewalkTile?.complete) {
@@ -1118,19 +1159,19 @@ export class Game {
         ctx.lineTo(this.worldWidth, laneY + Math.round(laneHeight * 0.56));
         ctx.stroke();
         ctx.setLineDash([]);
-      } else if (lane.type === 'water') this.drawWaterLane({ lane, laneY, laneHeight, laneIndex: y });
-      else if (lane.type === 'rail') this.drawRailLane({ lane, laneY, laneHeight, laneIndex: y });
+      } else if (laneDef.renderMode === 'water') this.drawWaterLane({ lane, laneY, laneHeight, laneIndex: y });
+      else if (laneDef.renderMode === 'rail') this.drawRailLane({ lane, laneY, laneHeight, laneIndex: y });
       else this.drawGrassLane({ lane, laneY, laneHeight, laneIndex: y });
 
-      this.drawProps(lane, laneY);
+      this.drawProps(lane, laneY, laneDef);
     }
   }
 
-  drawProps(lane, y) {
+  drawProps(lane, y, laneDef = this.getLaneDefinition(lane.type)) {
     const ctx = this.ctx;
     const seedOffset = Math.floor((lane.seed * 100) % 7);
 
-    if (lane.type === 'grass') {
+    if (laneDef.key === 'grass') {
       const treeSprite = this.environmentSprites.tree1;
       for (let i = 0; i < 3; i += 1) {
         const px = (i * 2 + seedOffset) * this.tile * 0.9;
@@ -1150,7 +1191,7 @@ export class Game {
     }
 
     const propX = (seedOffset % 4) * this.tile * 2.1 + this.tile * 0.25;
-    if (lane.type === 'road') {
+    if (laneDef.key === 'road') {
       const variant = Math.floor(lane.seed * 1000) % 2 === 0 ? 'foodCart' : 'benson1';
       const streetProp = this.environmentSprites[variant];
       if (streetProp?.complete) {
@@ -1163,12 +1204,12 @@ export class Game {
         ctx.fillStyle = '#d8c7a1';
         ctx.fillRect(propX + 4, y + this.tile * 0.59, 28, 8);
       }
-    } else if (lane.type === 'water') {
+    } else if (laneDef.key === 'water') {
       ctx.fillStyle = '#6b7e8b';
       ctx.fillRect(propX + 14, y + this.tile * 0.08, 6, 24);
       ctx.fillStyle = '#d1d5db';
       ctx.fillRect(propX, y + this.tile * 0.04, 34, 12);
-    } else if (lane.type === 'rail') {
+    } else if (laneDef.key === 'rail') {
       ctx.fillStyle = '#64564f';
       ctx.fillRect(propX, y + this.tile * 0.06, 44, 18);
       ctx.fillStyle = '#d4d4d4';

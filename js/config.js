@@ -313,6 +313,58 @@ export const ASSET_GUIDE = ASSET_METADATA.filter((item) => item.visibleInInfoMen
 
 export const DEV_ASSET_BROWSER_ITEMS = ASSET_METADATA.filter((item) => item.visibleInDevAssetBrowser);
 
+export const LANE_DEFINITIONS = Object.freeze({
+  grass: Object.freeze({
+    key: 'grass',
+    category: 'safe',
+    surface: 'grassTile',
+    renderMode: 'grass',
+    fallbackColor: '#4a6047',
+    allowedProps: ['tree1'],
+    allowedHazards: [],
+    allowedPlatforms: [],
+    allowsCoins: true,
+    trainWarning: false
+  }),
+  road: Object.freeze({
+    key: 'road',
+    category: 'traffic',
+    surface: 'roadTile',
+    shoulderSurface: 'sidewalkTile',
+    renderMode: 'road',
+    fallbackColor: '#505962',
+    allowedProps: ['foodCart', 'benson1'],
+    allowedHazards: ['car1', 'car2', 'car3', 'scooter1', 'bike1'],
+    allowedPlatforms: [],
+    allowsCoins: false,
+    trainWarning: false
+  }),
+  water: Object.freeze({
+    key: 'water',
+    category: 'river',
+    surface: 'riverTile',
+    renderMode: 'water',
+    fallbackColor: '#34576d',
+    allowedProps: ['waterMarker'],
+    allowedHazards: [],
+    allowedPlatforms: ['log1', 'raft1', 'kayak1'],
+    allowsCoins: false,
+    trainWarning: false
+  }),
+  rail: Object.freeze({
+    key: 'rail',
+    category: 'max',
+    surface: 'railTile',
+    renderMode: 'rail',
+    fallbackColor: '#676b5a',
+    allowedProps: ['railSignal'],
+    allowedHazards: ['maxTrain'],
+    allowedPlatforms: [],
+    allowsCoins: false,
+    trainWarning: true
+  })
+});
+
 export const GAME_CONFIG = {
   cols: 9,
   tileSize: 96,
@@ -519,11 +571,11 @@ export const GAME_CONFIG = {
     }
   },
   coins: {
-    spawnChancePerSecond: 0.75,
+    spawnChancePerSecond: 0.7875,
     maxActive: 3,
     spawnAheadMin: 4,
     spawnAheadMax: 15,
-    coinsNeededForSuperJump: 10,
+    coinsNeededForSuperJump: 5,
     superJumpDistance: 20
   },
   superJump: {
