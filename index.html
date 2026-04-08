@@ -33,23 +33,33 @@
             <span>Best</span>
             <strong id="bestValue" aria-live="polite">0</strong>
           </div>
+          <div class="stat-card" id="coinCard">
+            <span>Coins</span>
+            <strong id="coinValue" aria-live="polite">0/10</strong>
+          </div>
+          <div class="stat-card" id="superJumpCard">
+            <span>Super Jumps</span>
+            <strong id="superJumpValue" aria-live="polite">0</strong>
+          </div>
           <button id="muteBtn" class="icon-btn" type="button" aria-label="Toggle sound" aria-pressed="false">🔊</button>
         </div>
       </header>
 
       <main class="canvas-wrap" aria-label="Game board">
         <canvas id="gameCanvas" width="900" height="1400" aria-label="Game canvas"></canvas>
+        <div id="toast" class="toast" aria-live="polite"></div>
 
         <section id="startScreen" class="overlay show" aria-labelledby="startTitle" aria-hidden="false">
           <div class="card" role="dialog" aria-modal="true">
             <h2 id="startTitle">Welcome to Fig Game</h2>
             <p>
-              Dash through rainy Portland streets, bike lanes, and MAX tracks. Keyboard and touch supported.
+              Dash through rainy Portland streets, floating river lanes, and MAX tracks. Keyboard and touch supported.
             </p>
             <div class="controls-list" aria-label="Controls">
               <p><kbd>WASD</kbd> / <kbd>Arrows</kbd> to move</p>
+              <p><kbd>J</kbd> or <kbd>Space</kbd> to use a Super Jump</p>
               <p><kbd>P</kbd> or <kbd>Esc</kbd> to pause</p>
-              <p class="hint">Tip: Thread close to traffic for bonus points.</p>
+              <p class="hint">Collect 10 coins to charge 1 Super Jump (20-lane launch).</p>
             </div>
             <div class="menu-actions">
               <button id="startBtn" class="primary" type="button" autofocus>Start Run</button>
@@ -85,6 +95,7 @@
           <button data-dir="down" type="button" aria-label="Move down">▼</button>
           <button data-dir="right" type="button" aria-label="Move right">▶</button>
         </div>
+        <button id="superJumpBtn" data-action="superjump" type="button" aria-label="Use super jump">⤴ SUPER</button>
       </nav>
     </div>
 
