@@ -22,14 +22,14 @@ export const GAME_CONFIG = {
   cols: 9,
   tileSize: 96,
   visibleRows: 14,
-  baseMoveCooldown: 105,
+  baseMoveCooldown: 92,
   startY: 2,
-  difficultyRampEvery: 12,
+  difficultyRampEvery: 14,
   despawnMargin: 3,
-  cameraLerp: 0.2,
-  screenShakeDecay: 0.86,
-  screenShakeMax: 14,
-  particleLifetime: 0.35,
+  cameraLerp: 0.22,
+  screenShakeDecay: 0.88,
+  screenShakeMax: 11,
+  particleLifetime: 0.4,
   lanePalette: {
     grass: '#14532d',
     road: '#1f2937',
@@ -37,9 +37,9 @@ export const GAME_CONFIG = {
     rail: '#3f3f46'
   },
   laneWeights: [
-    { type: 'grass', weight: 2.4 },
-    { type: 'road', weight: 4.1 },
-    { type: 'water', weight: 2.6 },
-    { type: 'rail', weight: 1.3 }
+    { type: 'grass', weight: 2.5 },
+    { type: 'road', weight: 3.9 },
+    { type: 'water', weight: 2.4 },
+    { type: 'rail', weight: 1.2 }
   ]
 };
