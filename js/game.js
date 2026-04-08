@@ -924,7 +924,7 @@ export class Game {
     return Math.max(1, Math.round(this.tile));
   }
 
-  drawLaneTexture(sprite, { y, height, fallbackColor, laneY = null }) {
+  drawLaneTexture(sprite, { y, height, fallbackColor, laneY = null, anchorX = 0, anchorY = null, tileScale = 1 }) {
     const ctx = this.ctx;
     const tileSettings = GAME_CONFIG.environmentTiles;
     const snap = tileSettings.snapToPixels !== false;
@@ -939,10 +939,13 @@ export class Game {
     }
 
     const worldUnits = tileSettings.baseWorldUnits;
-    const tileHeight = Math.max(1, Math.round(drawHeight * (worldUnits.height ?? 1)));
-    const tileWidth = Math.max(1, Math.round((worldUnits.width ?? 1) * tileHeight * (sprite.naturalWidth / sprite.naturalHeight)));
-    const anchorWorldX = 0;
-    const anchorWorldY = laneY ?? 0;
+    const tileHeight = Math.max(1, Math.round(drawHeight * (worldUnits.height ?? 1) * tileScale));
+    const tileWidth = Math.max(
+      1,
+      Math.round((worldUnits.width ?? 1) * tileHeight * (sprite.naturalWidth / sprite.naturalHeight) * tileScale)
+    );
+    const anchorWorldX = anchorX;
+    const anchorWorldY = anchorY ?? laneY ?? 0;
     const firstTileX = -((((anchorWorldX * this.tile) % tileWidth) + tileWidth) % tileWidth);
     const firstTileY = drawY - ((((anchorWorldY * this.tile) % tileHeight) + tileHeight) % tileHeight);
 
@@ -955,25 +958,36 @@ export class Game {
     const ctx = this.ctx;
     const grassTile = this.environmentSprites.grassTile;
     const grassStyle = GAME_CONFIG.environmentTiles.grass;
-    this.drawLaneTexture(grassTile, { y: laneY, laneY: laneIndex, height: laneHeight, fallbackColor: '#4a6047' });
+    this.drawLaneTexture(grassTile, {
+      y: laneY,
+      laneY: laneIndex,
+      height: laneHeight,
+      fallbackColor: '#4a6047',
+      anchorY: 0,
+      tileScale: grassStyle.baseScale
+    });
+    this.drawLaneTexture(grassTile, {
+      y: laneY,
+      laneY: laneIndex,
+      height: laneHeight,
+      fallbackColor: '#4a6047',
+      anchorX: grassStyle.detailOffsetX,
+      anchorY: grassStyle.detailOffsetY,
+      tileScale: grassStyle.detailScale
+    });
 
-    const stripHeight = Math.max(2, Math.round(laneHeight * grassStyle.stripHeightRatio));
-    const drift = Math.sin(this.time * grassStyle.stripDriftSpeed + lane.seed) * this.tile * 0.12;
+    const laneWorldY = laneIndex * this.tile;
     const shadeTop = ctx.createLinearGradient(0, laneY, 0, laneY + laneHeight);
-    shadeTop.addColorStop(0, 'rgba(19, 35, 20, 0.35)');
-    shadeTop.addColorStop(0.45, 'rgba(47, 78, 45, 0.12)');
-    shadeTop.addColorStop(1, 'rgba(8, 18, 9, 0.3)');
+    shadeTop.addColorStop(0, 'rgba(13, 26, 14, 0.26)');
+    shadeTop.addColorStop(0.5, 'rgba(55, 92, 50, 0.08)');
+    shadeTop.addColorStop(1, 'rgba(12, 24, 13, 0.2)');
     ctx.fillStyle = shadeTop;
     ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
 
-    ctx.fillStyle = 'rgba(161, 199, 131, 0.1)';
-    ctx.fillRect(drift, laneY + Math.round((laneHeight - stripHeight) * 0.5), this.worldWidth, stripHeight);
-
-    const grainStep = Math.max(14, Math.round(this.tile * 0.3));
-    ctx.fillStyle = `rgba(209, 236, 182, ${grassStyle.grainAlpha})`;
-    for (let px = ((lane.seed * 1000) % grainStep) - grainStep; px < this.worldWidth; px += grainStep) {
-      ctx.fillRect(Math.round(px), laneY + 2, 1, Math.max(2, laneHeight - 4));
-    }
+    const undulation = Math.sin((laneWorldY + this.time * 12) * grassStyle.undulationFreq) * grassStyle.undulationAlpha;
+    const tonalAlpha = Math.max(0, grassStyle.tonalAlpha + undulation);
+    ctx.fillStyle = `rgba(170, 202, 141, ${tonalAlpha})`;
+    ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
   }
 
   drawWaterLane({ lane, laneY, laneHeight, laneIndex }) {
@@ -1017,12 +1031,13 @@ export class Game {
 
     ctx.fillStyle = '#5b5e51';
     ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
-    this.drawLaneTexture(this.environmentSprites.railTile, {
-      y: ballastY,
-      laneY: laneIndex,
-      height: ballastHeight,
-      fallbackColor: '#676b5a'
-    });
+    const railTile = this.environmentSprites.railTile;
+    if (railTile?.complete && railTile.naturalWidth && railTile.naturalHeight) {
+      ctx.drawImage(railTile, 0, 0, railTile.naturalWidth, railTile.naturalHeight, 0, ballastY, this.worldWidth, ballastHeight);
+    } else {
+      ctx.fillStyle = '#676b5a';
+      ctx.fillRect(0, ballastY, this.worldWidth, ballastHeight);
+    }
 
     ctx.fillStyle = 'rgba(30, 33, 29, 0.5)';
     ctx.fillRect(0, ballastY, this.worldWidth, 2);
@@ -1040,14 +1055,12 @@ export class Game {
     ctx.lineTo(this.worldWidth, centerY + railOffset);
     ctx.stroke();
 
-    const tieCount = railStyle.tieCount;
-    const tieW = Math.max(8, Math.round(this.tile * 0.18));
+    const tieW = Math.max(10, Math.round(this.tile * railStyle.tieWidthRatio));
     const tieH = Math.max(4, Math.round(gauge + this.tile * 0.12));
-    const tieGap = this.worldWidth / tieCount;
-    const tieOffset = ((this.time * 38 * lane.direction) % tieGap + tieGap) % tieGap;
+    const tieGap = Math.max(16, Math.round(this.tile * railStyle.tieGapRatio));
+    const tieOffset = ((((laneIndex * this.tile) % tieGap) + tieGap) % tieGap);
     ctx.fillStyle = 'rgba(49, 38, 27, 0.86)';
-    for (let i = -1; i <= tieCount + 1; i += 1) {
-      const tieX = Math.round(i * tieGap - tieOffset);
+    for (let tieX = -tieGap - tieOffset; tieX < this.worldWidth + tieGap; tieX += tieGap) {
       ctx.fillRect(tieX, Math.round(centerY - tieH / 2), tieW, tieH);
     }
 
@@ -1244,25 +1257,12 @@ export class Game {
       ctx.ellipse(cx, cy + this.tile * visuals.shadowOffsetRatio, drawSize * 0.24, drawSize * 0.12, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      const glow = ctx.createRadialGradient(cx, cy, drawSize * 0.08, cx, cy, drawSize * (0.5 + visuals.glowRadiusRatio));
-      glow.addColorStop(0, `rgba(252, 228, 122, ${visuals.glowAlpha})`);
-      glow.addColorStop(1, 'rgba(252, 228, 122, 0)');
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(cx, cy, drawSize * (0.5 + visuals.glowRadiusRatio), 0, Math.PI * 2);
-      ctx.fill();
-
       if (coinSprite?.complete) {
         this.drawSpriteWithRenderProfile(
           coinSprite,
           { x: cx - drawSize / 2, y: cy - drawSize / 2, width: drawSize, height: drawSize },
           'coin'
         );
-        ctx.strokeStyle = `rgba(255, 248, 214, ${visuals.rimAlpha})`;
-        ctx.lineWidth = visuals.rimWidthPx;
-        ctx.beginPath();
-        ctx.arc(cx, cy, drawSize * 0.47, 0, Math.PI * 2);
-        ctx.stroke();
       } else {
         const r = this.tile * 0.16;
         ctx.fillStyle = '#e5c15f';
