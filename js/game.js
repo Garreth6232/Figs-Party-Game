@@ -33,26 +33,44 @@ export class Game {
     this.onGameOver = onGameOver;
     this.best = Number(localStorage.getItem(STORAGE_KEYS.bestScore) ?? 0);
     this.playerSprites = {};
+    this.environmentSprites = {};
+    this.collectibleSprites = {};
+    this.superJumpVisualTimer = 0;
     this.collisionSystem = new CollisionSystem();
     this.resize();
-    this.loadPlayerSprites();
+    this.loadSprites();
     window.addEventListener('resize', () => this.resize());
     this.reset();
   }
 
-  loadPlayerSprites() {
+  loadSprites() {
     const sprites = ASSET_MANIFEST.player;
-    const map = {
+    const playerMap = {
       forward: sprites.figForward,
       left: sprites.figLeft,
       right: sprites.figRight,
-      back: sprites.figBack
+      back: sprites.figBack,
+      superJump: sprites.figSJ
     };
-    for (const [direction, src] of Object.entries(map)) {
+    for (const [direction, src] of Object.entries(playerMap)) {
       const image = new Image();
       image.src = src;
       image.decoding = 'async';
       this.playerSprites[direction] = image;
+    }
+
+    const worldSprites = {
+      riverTile: ASSET_MANIFEST.environment.riverTile,
+      tree1: ASSET_MANIFEST.environment.tree1,
+      coin: ASSET_MANIFEST.collectibles.coin
+    };
+
+    for (const [key, src] of Object.entries(worldSprites)) {
+      const image = new Image();
+      image.src = src;
+      image.decoding = 'async';
+      if (key === 'coin') this.collectibleSprites[key] = image;
+      else this.environmentSprites[key] = image;
     }
   }
 
@@ -87,7 +105,8 @@ export class Game {
       drawY: GAME_CONFIG.startY,
       stretch: 0,
       tilt: 0,
-      facing: 'forward'
+      facing: 'forward',
+      visualState: 'normal'
     };
     this.score = 0;
     this.coinCount = 0;
@@ -102,6 +121,7 @@ export class Game {
     this.lastNearMissAt = 0;
     this.lastMoveAt = 0;
     this.time = 0;
+    this.superJumpVisualTimer = 0;
     this.cameraY = this.player.y - 3;
     this.shake = 0;
     this.shakeTimer = 0;
@@ -195,6 +215,8 @@ export class Game {
     this.player.drawY = landing.y - 1.2;
     this.player.stretch = 0.35;
     this.player.facing = 'back';
+    this.player.visualState = 'superJump';
+    this.superJumpVisualTimer = GAME_CONFIG.superJump.spriteDuration;
     this.spawnBurst('#d9bd70', 30);
 
     this.handleProgressScore();
@@ -408,6 +430,10 @@ export class Game {
     this.player.drawY += (this.player.y - this.player.drawY) * 0.34;
     this.player.tilt *= 0.86;
     this.player.stretch = Math.max(0, this.player.stretch - dt * 1.8);
+    if (this.player.visualState === 'superJump') {
+      this.superJumpVisualTimer = Math.max(0, this.superJumpVisualTimer - dt);
+      if (this.superJumpVisualTimer <= 0) this.player.visualState = 'normal';
+    }
     this.updateParticles(dt);
     this.updateRain(dt);
 
@@ -732,8 +758,13 @@ export class Game {
         ctx.stroke();
         ctx.setLineDash([]);
       } else if (lane.type === 'water') {
-        ctx.fillStyle = '#34576d';
-        ctx.fillRect(0, pos.y, this.worldWidth, this.tile);
+        const riverTile = this.environmentSprites.riverTile;
+        if (riverTile?.complete) ctx.drawImage(riverTile, 0, pos.y, this.worldWidth, this.tile);
+        else {
+          ctx.fillStyle = '#34576d';
+          ctx.fillRect(0, pos.y, this.worldWidth, this.tile);
+        }
+
         ctx.fillStyle = 'rgba(238, 242, 245, 0.14)';
         for (let i = 0; i < 4; i += 1) {
           const waveY = pos.y + this.tile * 0.2 + i * 13 + Math.sin(this.time * 2.5 + i + lane.seed) * 3;
@@ -773,15 +804,20 @@ export class Game {
     const seedOffset = Math.floor((lane.seed * 100) % 7);
 
     if (lane.type === 'grass') {
+      const treeSprite = this.environmentSprites.tree1;
       for (let i = 0; i < 3; i += 1) {
         const px = (i * 2 + seedOffset) * this.tile * 0.9;
-        ctx.fillStyle = '#2c4b36';
-        ctx.beginPath();
-        ctx.moveTo(px + 20, y + this.tile * 0.24);
-        ctx.lineTo(px + 8, y + this.tile * 0.58);
-        ctx.lineTo(px + 32, y + this.tile * 0.58);
-        ctx.closePath();
-        ctx.fill();
+        if (treeSprite?.complete) {
+          ctx.drawImage(treeSprite, px + 8, y + this.tile * 0.15, this.tile * 0.32, this.tile * 0.44);
+        } else {
+          ctx.fillStyle = '#2c4b36';
+          ctx.beginPath();
+          ctx.moveTo(px + 20, y + this.tile * 0.24);
+          ctx.lineTo(px + 8, y + this.tile * 0.58);
+          ctx.lineTo(px + 32, y + this.tile * 0.58);
+          ctx.closePath();
+          ctx.fill();
+        }
       }
       return;
     }
@@ -869,21 +905,27 @@ export class Game {
 
   drawCoins() {
     const ctx = this.ctx;
+    const coinSprite = this.collectibleSprites.coin;
     for (const coin of this.coins) {
       const pos = this.worldToScreen(coin.x, coin.y);
       const bob = Math.sin(this.time * 5 + coin.bobSeed) * this.tile * 0.06;
       const cx = (coin.x + 0.5) * this.tile;
       const cy = pos.y + this.tile * (0.45 + GAME_CONFIG.alignment.collectible.renderOffsetY) + bob;
-      const r = this.tile * 0.16;
-      ctx.fillStyle = '#e5c15f';
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#8f6f2d';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      ctx.fillStyle = '#f6e7a6';
-      ctx.fillRect(cx - 2, cy - r * 0.6, 4, r * 1.2);
+      const drawSize = this.tile * 0.34;
+      if (coinSprite?.complete) {
+        ctx.drawImage(coinSprite, cx - drawSize / 2, cy - drawSize / 2, drawSize, drawSize);
+      } else {
+        const r = this.tile * 0.16;
+        ctx.fillStyle = '#e5c15f';
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#8f6f2d';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.fillStyle = '#f6e7a6';
+        ctx.fillRect(cx - 2, cy - r * 0.6, 4, r * 1.2);
+      }
     }
   }
 
@@ -905,7 +947,7 @@ export class Game {
     ctx.ellipse(x + w / 2, y + h * 0.95, w * 0.4, h * 0.15, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    const sprite = this.playerSprites[this.player.facing];
+    const sprite = this.player.visualState === 'superJump' ? this.playerSprites.superJump : this.playerSprites[this.player.facing];
     if (sprite && sprite.complete) ctx.drawImage(sprite, x, y, w, h);
     else {
       ctx.fillStyle = '#f4a261';

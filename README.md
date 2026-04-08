@@ -60,11 +60,11 @@ All asset keys are centrally defined in:
 
 Replace files in these folders with your own art/audio while keeping names or updating both manifests:
 
-- `/assets/player` → `figForward` (png), `figLeft` (png), `figRight` (png), `figBack`
+- `/assets/player` → `figForward` (png), `figLeft` (png), `figRight` (png), `figBack` (png), `figSJ` (png)
 - `/assets/vehicles` → `car1` (png), `car2`, `car3`, `bike1`, `scooter1`, `maxTrain` (png)
 - `/assets/hazards` → `log1`, `raft1`, `kayak1`
 - `/assets/collectibles` → `coin` (png)
-- `/assets/environment` → `riverTile`, `roadTile`, `sidewalkTile`, `bridgeTile`, `tree1`, `foodCart1`
+- `/assets/environment` → `riverTile` (png), `roadTile`, `sidewalkTile`, `bridgeTile`, `tree1` (png), `foodCart1`
 - `/assets/ui` → UI-only indicators (example: `superJumpReady`)
 - `/assets/audio` → optional audio files
 

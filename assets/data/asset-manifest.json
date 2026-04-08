@@ -3,7 +3,8 @@
     "figForward": "assets/player/figForward.png",
     "figLeft": "assets/player/figLeft.png",
     "figRight": "assets/player/figRight.png",
-    "figBack": "assets/player/figBack.svg"
+    "figBack": "assets/player/figBack.png",
+    "figSJ": "assets/player/figSJ.png"
   },
   "vehicles": {
     "car1": "assets/vehicles/car1.png",
@@ -22,15 +23,18 @@
     "coin": "assets/collectibles/coin.png"
   },
   "environment": {
-    "riverTile": "assets/environment/riverTile.svg",
+    "riverTile": "assets/environment/riverTile.png",
     "roadTile": "assets/environment/roadTile.svg",
     "sidewalkTile": "assets/environment/sidewalkTile.svg",
     "bridgeTile": "assets/environment/bridgeTile.svg",
-    "tree1": "assets/environment/tree1.svg",
+    "tree1": "assets/environment/tree1.png",
     "foodCart1": "assets/environment/foodCart1.svg"
   },
   "ui": {
     "superJumpReady": "assets/ui/superJumpReady.svg"
+  },
+  "warnings": {
+    "trainWarning": "(canvas-generated)"
   },
   "audio": {
     "hop": "assets/audio/hop.wav",
@@ -38,8 +42,19 @@
     "score": "assets/audio/score.wav",
     "ui": "assets/audio/ui.wav"
   },
+  "metadataFields": [
+    "key",
+    "path",
+    "category",
+    "label",
+    "description",
+    "interactionType",
+    "visibleInInfoMenu",
+    "visibleInDevAssetBrowser"
+  ],
   "notes": {
-    "swapInstructions": "Replace any file in this manifest with your own art while keeping key names unchanged.",
-    "naming": "All keys are human-readable and grouped by purpose for easy GitHub Pages-safe swapping."
+    "sourceOfTruth": "js/config.js -> ASSET_METADATA",
+    "swapInstructions": "Replace asset files and keep keys stable (or update both config and this manifest).",
+    "naming": "Relative paths preserve GitHub Pages/static compatibility."
   }
 }
