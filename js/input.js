@@ -47,7 +47,7 @@ export class InputManager {
       }
     });
 
-    this.touchContainer.querySelectorAll('button[data-dir]').forEach((btn) => {
+    this.touchContainer?.querySelectorAll('button[data-dir]').forEach((btn) => {
       btn.addEventListener('pointerdown', (event) => {
         event.preventDefault();
         this.startHold(btn.dataset.dir);
@@ -57,7 +57,7 @@ export class InputManager {
       btn.addEventListener('pointerleave', () => this.stopHold());
     });
 
-    this.touchContainer.querySelectorAll('button[data-action="superjump"]').forEach((btn) => {
+    this.touchContainer?.querySelectorAll('button[data-action="superjump"]').forEach((btn) => {
       btn.addEventListener('click', (event) => {
         event.preventDefault();
         this.onSuperJump();

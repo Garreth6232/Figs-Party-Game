@@ -72,6 +72,8 @@ export class Game {
 
     const worldSprites = {
       riverTile: ASSET_MANIFEST.environment.riverTile,
+      roadTile: ASSET_MANIFEST.environment.roadTile,
+      sidewalkTile: ASSET_MANIFEST.environment.sidewalkTile,
       tree1: ASSET_MANIFEST.environment.tree1,
       coin: ASSET_MANIFEST.collectibles.coin
     };
@@ -785,7 +787,7 @@ export class Game {
         this.tile
       );
       if (hit) {
-        this.kill(h.type === 'maxTrain' ? 'A MAX train blasted through your lane.' : 'Portland traffic cut off your route.');
+        this.kill(h.type === 'maxTrain' ? 'A MAX train blasted through your lane.' : 'Traffic cut off your route.');
         return;
       }
 
@@ -923,10 +925,25 @@ export class Game {
       ctx.fillRect(0, pos.y, this.worldWidth, this.tile + 1);
 
       if (lane.type === 'road') {
-        ctx.fillStyle = '#505962';
-        ctx.fillRect(0, pos.y + this.tile * 0.12, this.worldWidth, this.tile * 0.76);
-        ctx.fillStyle = '#5f7f69';
-        ctx.fillRect(0, pos.y + this.tile * 0.12, this.worldWidth, this.tile * 0.16);
+        const roadTile = this.environmentSprites.roadTile;
+        const sidewalkTile = this.environmentSprites.sidewalkTile;
+
+        if (roadTile?.complete) ctx.drawImage(roadTile, 0, pos.y, this.worldWidth, this.tile);
+        else {
+          ctx.fillStyle = '#505962';
+          ctx.fillRect(0, pos.y + this.tile * 0.12, this.worldWidth, this.tile * 0.76);
+        }
+
+        if (sidewalkTile?.complete) {
+          const shoulderHeight = this.tile * 0.14;
+          ctx.drawImage(sidewalkTile, 0, pos.y, this.worldWidth, shoulderHeight);
+          ctx.drawImage(sidewalkTile, 0, pos.y + this.tile - shoulderHeight, this.worldWidth, shoulderHeight);
+        } else {
+          ctx.fillStyle = '#5f7f69';
+          ctx.fillRect(0, pos.y + this.tile * 0.1, this.worldWidth, this.tile * 0.14);
+          ctx.fillRect(0, pos.y + this.tile * 0.76, this.worldWidth, this.tile * 0.14);
+        }
+
         ctx.strokeStyle = 'rgba(245, 245, 245, 0.55)';
         ctx.setLineDash([14, 18]);
         ctx.lineDashOffset = -(this.time * 58 * lane.direction);
