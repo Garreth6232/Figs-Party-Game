@@ -24,6 +24,10 @@ const syncMuteButton = () => {
   muteBtn.setAttribute('aria-pressed', String(audio.isMuted));
 };
 syncMuteButton();
+ui.setDebugHandlers({
+  onHitboxesToggle: (enabled) => game.setCollisionDebug(enabled)
+});
+ui.setHitboxes(game.collisionSystem.debugEnabled);
 
 muteBtn.addEventListener('click', () => {
   audio.toggleMute();
@@ -86,7 +90,10 @@ const input = new InputManager({
   touchContainer: document.querySelector('.touch-controls'),
   onMove: (dir) => game.move(dir),
   onSuperJump: () => game.useSuperJump(),
-  onToggleDebug: () => game.toggleCollisionDebug(),
+  onToggleDebug: () => {
+    const enabled = game.toggleCollisionDebug();
+    ui.setHitboxes(enabled);
+  },
   onPause: () => {
     if (game.state === GAME_STATES.MENU || game.state === GAME_STATES.GAME_OVER || !ui.infoScreen.classList.contains('hidden')) return;
     game.togglePause();

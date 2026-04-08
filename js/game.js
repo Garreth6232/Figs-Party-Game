@@ -75,6 +75,7 @@ export class Game {
   reset() {
     this.player = {
       x: Math.floor(GAME_CONFIG.cols / 2),
+      fx: Math.floor(GAME_CONFIG.cols / 2),
       y: GAME_CONFIG.startY,
       drawX: Math.floor(GAME_CONFIG.cols / 2),
       drawY: GAME_CONFIG.startY,
@@ -100,6 +101,7 @@ export class Game {
     this.nextHazardId = 1;
     this.nextPlatformId = 1;
     this.nextCoinId = 1;
+    this.attachedPlatformId = null;
     this.laneCache = new Map();
     this.trainWarnings = new Map();
     for (let y = -6; y < 80; y += 1) this.ensureLane(y);
@@ -121,6 +123,11 @@ export class Game {
   toggleCollisionDebug() {
     const enabled = this.collisionSystem.toggleDebug();
     this.ui.showToast(`Collision debug ${enabled ? 'ON' : 'OFF'}`, 'info');
+    return enabled;
+  }
+
+  setCollisionDebug(enabled) {
+    this.collisionSystem.debugEnabled = Boolean(enabled);
   }
 
   togglePause() {
@@ -149,7 +156,9 @@ export class Game {
 
     const dx = nx - this.player.x;
     this.player.x = nx;
+    this.player.fx = nx;
     this.player.y = ny;
+    this.attachedPlatformId = null;
     this.player.tilt = dx * 0.2;
     this.player.stretch = 0.15;
     this.spawnHopParticles();
@@ -173,6 +182,7 @@ export class Game {
     this.audio.play('super_use');
 
     this.player.x = landing.x;
+    this.player.fx = landing.x;
     this.player.drawX = landing.x;
     this.player.y = landing.y;
     this.player.drawY = landing.y - 1.2;
@@ -358,7 +368,7 @@ export class Game {
 
   update(dt) {
     this.time += dt;
-    this.player.drawX += (this.player.x - this.player.drawX) * 0.34;
+    this.player.drawX += (this.player.fx - this.player.drawX) * 0.45;
     this.player.drawY += (this.player.y - this.player.drawY) * 0.34;
     this.player.tilt *= 0.86;
     this.player.stretch = Math.max(0, this.player.stretch - dt * 1.8);
@@ -415,6 +425,8 @@ export class Game {
     }
     this.platforms = this.platforms.filter((p) => p.x > -5 && p.x < GAME_CONFIG.cols + 5);
 
+    this.updateRiverAttachment(dt);
+
     const minCoinY = this.player.y - 2;
     this.coins = this.coins.filter((coin) => coin.y >= minCoinY);
 
@@ -437,42 +449,68 @@ export class Game {
   findPlatformUnderPoint(x, y) {
     return this.platforms.find((platform) => {
       if (platform.y !== y) return false;
-      const platformEntity = this.getPlatformCollisionEntity(platform);
-      const playerProbe = {
-        x: x - 0.5,
-        y,
-        screenY: this.worldToScreen(0, y).y,
-        w: 0.15,
-        h: 0.58
-      };
-      return this.collisionSystem.narrowPhase(playerProbe, 'player', this.player.facing, platformEntity, 'platform', 'forward', this.tile);
+      const left = platform.x + 0.5 - platform.w * 0.5;
+      const right = platform.x + 0.5 + platform.w * 0.5;
+      const margin = GAME_CONFIG.riverPlatforms.hitboxPaddingX;
+      return x >= left + margin && x <= right - margin;
     });
   }
 
+  updateRiverAttachment(dt) {
+    const lane = this.laneCache.get(this.player.y);
+    if (lane?.type !== 'water') {
+      this.attachedPlatformId = null;
+      return;
+    }
+
+    const playerCenterX = this.player.fx + 0.5;
+    let platform = this.platforms.find((entry) => entry.id === this.attachedPlatformId && entry.y === this.player.y);
+    if (!platform || !this.findPlatformUnderPoint(playerCenterX, this.player.y)) {
+      platform = this.findPlatformUnderPoint(playerCenterX, this.player.y);
+    }
+
+    if (!platform) {
+      this.attachedPlatformId = null;
+      return;
+    }
+
+    this.attachedPlatformId = platform.id;
+    const rideStep = platform.x - platform.prevX;
+    this.player.fx += rideStep;
+    this.player.fx = clamp(this.player.fx, -0.49, GAME_CONFIG.cols - 0.51);
+    this.player.x = clamp(Math.round(this.player.fx), 0, GAME_CONFIG.cols - 1);
+
+    if (this.player.fx <= -0.45 || this.player.fx >= GAME_CONFIG.cols - 0.55) {
+      this.kill('You drifted off the floating platform into the river.');
+    }
+  }
+
   getPlayerCollisionEntity() {
-    const laneScreen = this.worldToScreen(0, this.player.drawY).y;
+    const laneScreen = this.worldToScreen(0, this.player.y).y;
+    const align = GAME_CONFIG.alignment.player;
     return {
-      x: this.player.drawX,
-      y: this.player.drawY,
-      screenY: laneScreen,
+      x: this.player.fx,
+      y: this.player.y,
       w: GAME_CONFIG.collisions.profiles.player.width,
-      h: GAME_CONFIG.collisions.profiles.player.height
+      h: GAME_CONFIG.collisions.profiles.player.height,
+      screenY: laneScreen + this.tile * align.collisionOffsetY
     };
   }
 
   getHazardCollisionEntity(hazard) {
     const laneScreen = this.worldToScreen(0, hazard.y).y;
-    return { ...hazard, screenY: laneScreen };
+    const align = hazard.type === 'maxTrain' ? GAME_CONFIG.alignment.maxTrain : hazard.type === 'bike1' ? GAME_CONFIG.alignment.bike : hazard.type === 'scooter1' ? GAME_CONFIG.alignment.scooter : GAME_CONFIG.alignment.cars;
+    return { ...hazard, screenY: laneScreen + this.tile * align.collisionOffsetY };
   }
 
   getPlatformCollisionEntity(platform) {
     const laneScreen = this.worldToScreen(0, platform.y).y;
-    return { ...platform, screenY: laneScreen + this.tile * 0.03 };
+    return { ...platform, screenY: laneScreen + this.tile * GAME_CONFIG.alignment.platform.collisionOffsetY };
   }
 
   getCoinCollisionEntity(coin) {
     const laneScreen = this.worldToScreen(0, coin.y).y;
-    return { ...coin, screenY: laneScreen + this.tile * 0.08 };
+    return { ...coin, screenY: laneScreen + this.tile * GAME_CONFIG.alignment.collectible.collisionOffsetY };
   }
 
   handleCollisions(dt) {
@@ -520,19 +558,10 @@ export class Game {
     }
 
     if (lane.type === 'water') {
-      const platform = this.findPlatformUnderPoint(this.player.drawX + 0.5, this.player.y);
+      const platform = this.findPlatformUnderPoint(this.player.fx + 0.5, this.player.y);
       if (!platform) {
+        this.attachedPlatformId = null;
         this.kill('The Willamette rain runoff swept you away.');
-        return;
-      }
-
-      const rideStep = platform.speed * platform.dir * dt;
-      const stableStep = Math.abs(rideStep) > GAME_CONFIG.riverPlatforms.attachmentStability ? rideStep : 0;
-      this.player.drawX = clamp(this.player.drawX + stableStep, 0, GAME_CONFIG.cols - 1);
-      this.player.x = clamp(Math.round(this.player.drawX), 0, GAME_CONFIG.cols - 1);
-
-      if (this.player.drawX <= 0.03 || this.player.drawX >= GAME_CONFIG.cols - 1.03) {
-        this.kill('You drifted off the floating platform into the river.');
       }
     }
   }
@@ -703,7 +732,7 @@ export class Game {
       const width = p.w * this.tile;
       const height = p.h * this.tile;
       const x = pos.x - width / 2;
-      const y = pos.y + (this.tile - height) * 0.48;
+      const y = pos.y + (this.tile - height) * (0.5 + GAME_CONFIG.alignment.platform.renderOffsetY);
 
       if (p.type === 'raft1') {
         ctx.fillStyle = '#907357';
@@ -734,7 +763,8 @@ export class Game {
       const width = h.w * this.tile;
       const height = h.h * this.tile;
       const x = pos.x - width / 2;
-      const y = pos.y + (this.tile - height) * 0.5;
+      const align = h.type === 'maxTrain' ? GAME_CONFIG.alignment.maxTrain : h.type === 'bike1' ? GAME_CONFIG.alignment.bike : h.type === 'scooter1' ? GAME_CONFIG.alignment.scooter : GAME_CONFIG.alignment.cars;
+      const y = pos.y + (this.tile - height) * (0.5 + align.renderOffsetY);
 
       if (h.type.startsWith('car')) {
         ctx.fillStyle = h.type === 'car2' ? '#3d7b9a' : h.type === 'car3' ? '#9b5c3d' : '#9a4f3d';
@@ -770,7 +800,7 @@ export class Game {
       const pos = this.worldToScreen(coin.x, coin.y);
       const bob = Math.sin(this.time * 5 + coin.bobSeed) * this.tile * 0.06;
       const cx = pos.x + this.tile * 0.5;
-      const cy = pos.y + this.tile * 0.45 + bob;
+      const cy = pos.y + this.tile * (0.45 + GAME_CONFIG.alignment.collectible.renderOffsetY) + bob;
       const r = this.tile * 0.16;
       ctx.fillStyle = '#e5c15f';
       ctx.beginPath();
@@ -790,7 +820,7 @@ export class Game {
     const w = this.tile * (0.58 + this.player.stretch * 0.24);
     const h = this.tile * (0.62 - this.player.stretch * 0.16);
     const x = pos.x + (this.tile - w) / 2;
-    const y = pos.y + (this.tile - h) / 2;
+    const y = pos.y + (this.tile - h) * (0.5 + GAME_CONFIG.alignment.player.renderOffsetY);
 
     ctx.save();
     ctx.translate(x + w / 2, y + h / 2);
@@ -857,7 +887,19 @@ export class Game {
     }
 
     for (const p of this.platforms) {
-      entries.push({ entity: this.getPlatformCollisionEntity(p), type: 'platform', color: 'rgba(111, 214, 170, 0.7)', showMask: false });
+      entries.push({ entity: this.getPlatformCollisionEntity(p), type: 'platform', color: p.id === this.attachedPlatformId ? 'rgba(107, 236, 146, 0.9)' : 'rgba(111, 214, 170, 0.7)', showMask: false });
+    }
+
+    for (const coin of this.coins) {
+      entries.push({ entity: this.getCoinCollisionEntity(coin), type: 'collectible', color: 'rgba(255, 221, 111, 0.7)', showMask: false });
+    }
+
+    const lane = this.laneCache.get(this.player.y);
+    if (lane?.type === 'water') {
+      const waterY = this.worldToScreen(0, this.player.y).y;
+      this.ctx.strokeStyle = 'rgba(84, 172, 219, 0.8)';
+      this.ctx.lineWidth = 2;
+      this.ctx.strokeRect(0, waterY + 2, this.worldWidth, this.tile - 4);
     }
 
     this.collisionSystem.drawDebug(this.ctx, entries, this.tile);

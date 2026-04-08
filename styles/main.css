@@ -416,3 +416,63 @@ kbd {
     height: min(68vh, 760px);
   }
 }
+
+.secondary {
+  padding: 12px 22px;
+  font-size: 0.96rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-color: rgba(182, 194, 180, 0.55);
+  background: linear-gradient(180deg, #62726d, #43504b);
+}
+
+.secondary.small {
+  padding: 8px 14px;
+  font-size: 0.84rem;
+}
+
+.info-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field-label {
+  text-align: left;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.text-input {
+  width: min(280px, 100%);
+  align-self: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(182, 194, 180, 0.55);
+  background: rgba(26, 35, 37, 0.82);
+  color: var(--text);
+  font: inherit;
+}
+
+.error-text {
+  min-height: 1.2em;
+  color: #ef9f93;
+  font-size: 0.9rem;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(182, 194, 180, 0.3);
+  background: rgba(56, 67, 70, 0.45);
+  border-radius: 10px;
+  text-align: left;
+}
+
+.toggle-row input {
+  width: 20px;
+  height: 20px;
+}
