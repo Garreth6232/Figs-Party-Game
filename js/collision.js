@@ -75,16 +75,16 @@ export class CollisionSystem {
     const profile = this.getProfile(type);
     const width = (entity.w ?? profile.width) * tile;
     const height = (entity.h ?? profile.height) * tile;
-    const centerX = (entity.x + 0.5) * tile;
-    const centerY = entity.screenY + tile * 0.5;
+    const centerX = Number.isFinite(entity.centerX) ? entity.centerX * tile : (entity.x + (entity.anchorX ?? 0.5)) * tile;
+    const centerY = Number.isFinite(entity.centerY) ? entity.centerY : entity.screenY + tile * (entity.anchorY ?? 0.5);
     const padX = (profile.broadPadding?.x ?? 0) * tile;
     const padY = (profile.broadPadding?.y ?? 0) * tile;
 
     let left = centerX - width * 0.5 - padX;
     let right = centerX + width * 0.5 + padX;
 
-    if (swept && Number.isFinite(entity.prevX)) {
-      const prevCenterX = (entity.prevX + 0.5) * tile;
+    if (swept && (Number.isFinite(entity.prevCenterX) || Number.isFinite(entity.prevX))) {
+      const prevCenterX = (Number.isFinite(entity.prevCenterX) ? entity.prevCenterX : entity.prevX + (entity.anchorX ?? 0.5)) * tile;
       left = Math.min(left, prevCenterX - width * 0.5 - padX);
       right = Math.max(right, prevCenterX + width * 0.5 + padX);
     }
