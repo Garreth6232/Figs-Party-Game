@@ -1,4 +1,5 @@
 import { ASSET_MANIFEST, GAME_CONFIG, GAME_STATES, STORAGE_KEYS } from './config.js';
+import { CollisionSystem } from './collision.js';
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const randRange = (min, max) => Math.random() * (max - min) + min;
@@ -26,6 +27,7 @@ export class Game {
     this.state = GAME_STATES.MENU;
     this.best = Number(localStorage.getItem(STORAGE_KEYS.bestScore) ?? 0);
     this.playerSprites = {};
+    this.collisionSystem = new CollisionSystem();
     this.resize();
     this.loadPlayerSprites();
     window.addEventListener('resize', () => this.resize());
@@ -99,6 +101,7 @@ export class Game {
     this.nextPlatformId = 1;
     this.nextCoinId = 1;
     this.laneCache = new Map();
+    this.trainWarnings = new Map();
     for (let y = -6; y < 80; y += 1) this.ensureLane(y);
     this.ui.updateScore(this.score);
     this.ui.updateBest(this.best);
@@ -115,6 +118,11 @@ export class Game {
     this.state = nextState;
   }
 
+  toggleCollisionDebug() {
+    const enabled = this.collisionSystem.toggleDebug();
+    this.ui.showToast(`Collision debug ${enabled ? 'ON' : 'OFF'}`, 'info');
+  }
+
   togglePause() {
     if (this.state === GAME_STATES.PLAYING) this.state = GAME_STATES.PAUSED;
     else if (this.state === GAME_STATES.PAUSED) this.state = GAME_STATES.PLAYING;
@@ -123,12 +131,7 @@ export class Game {
   move(dir) {
     if (this.state !== GAME_STATES.PLAYING) return;
 
-    const facingMap = {
-      up: 'back',
-      down: 'forward',
-      left: 'left',
-      right: 'right'
-    };
+    const facingMap = { up: 'back', down: 'forward', left: 'left', right: 'right' };
     this.player.facing = facingMap[dir] ?? this.player.facing;
 
     const now = performance.now();
@@ -161,17 +164,18 @@ export class Game {
 
   useSuperJump() {
     if (this.state !== GAME_STATES.PLAYING || this.superJumps < 1) return;
-    const startY = this.player.y;
-    const targetY = startY + GAME_CONFIG.coins.superJumpDistance;
-    const landingY = this.findSafeLandingRow(targetY);
+    const targetY = this.player.y + GAME_CONFIG.coins.superJumpDistance;
+    const landing = this.findSafeLandingSpot(targetY);
 
     this.superJumps -= 1;
     this.ui.updateSuperJumps(this.superJumps);
     this.ui.showToast('SUPER JUMP!', 'success');
     this.audio.play('super_use');
 
-    this.player.y = landingY;
-    this.player.drawY = landingY - 1.2;
+    this.player.x = landing.x;
+    this.player.drawX = landing.x;
+    this.player.y = landing.y;
+    this.player.drawY = landing.y - 1.2;
     this.player.stretch = 0.35;
     this.player.facing = 'back';
     this.spawnBurst('#d9bd70', 30);
@@ -182,21 +186,20 @@ export class Game {
     for (let y = this.player.y - 8; y < this.player.y + 45; y += 1) this.ensureLane(y);
   }
 
-  findSafeLandingRow(targetY) {
-    const scanDepth = 8;
+  findSafeLandingSpot(targetY) {
+    const scanDepth = 10;
     for (let y = targetY; y >= Math.max(this.player.y + 1, targetY - scanDepth); y -= 1) {
       this.ensureLane(y);
       const lane = this.laneCache.get(y);
       if (!lane) continue;
-      if (lane.type === 'grass') return y;
-      if (lane.type === 'road' && !this.hasBlockingHazard(this.player.x, y, 0.9)) return y;
-      if (lane.type === 'rail') continue;
+      if (lane.type === 'grass') return { x: this.player.x, y };
+      if (lane.type === 'road' && !this.hasBlockingHazard(this.player.x, y, 0.9)) return { x: this.player.x, y };
       if (lane.type === 'water') {
-        const platform = this.findPlatformUnderPlayerAt(this.player.x, y);
-        if (platform) return y;
+        const platform = this.findPlatformUnderPoint(this.player.x + 0.5, y);
+        if (platform) return { x: clamp(Math.round(platform.x), 0, GAME_CONFIG.cols - 1), y };
       }
     }
-    return Math.max(this.player.y + 1, targetY - scanDepth);
+    return { x: this.player.x, y: Math.max(this.player.y + 1, targetY - scanDepth) };
   }
 
   hasBlockingHazard(x, y, padding = 0.8) {
@@ -222,26 +225,58 @@ export class Game {
     return true;
   }
 
+  isLaneSafeForSpawn(y) {
+    return y <= GAME_CONFIG.safeZones.guaranteedSafeRows;
+  }
+
   ensureLane(y) {
     if (this.laneCache.has(y)) return;
 
-    const isSafeStart = y <= GAME_CONFIG.safeStartRows;
-    const type = isSafeStart ? 'grass' : weightedLaneType(GAME_CONFIG.laneWeights);
+    const type = this.isLaneSafeForSpawn(y) ? 'grass' : weightedLaneType(GAME_CONFIG.laneWeights);
     const direction = Math.random() > 0.5 ? 1 : -1;
-    const lane = { y, type, direction, speed: 0, timer: 0, interval: 2, seed: Math.random() * 1000 };
+    const lane = { y, type, direction, speed: 0, timer: 0, interval: 2, seed: Math.random() * 1000, warningActive: false };
 
     if (type === 'road') {
       lane.speed = randRange(1.35, 2.7) + this.score * 0.012;
       lane.interval = randRange(1.75, 2.8);
     } else if (type === 'water') {
       lane.speed = randRange(GAME_CONFIG.riverPlatforms.minSpeed, GAME_CONFIG.riverPlatforms.maxSpeed);
-      lane.interval = randRange(GAME_CONFIG.riverPlatforms.minInterval, GAME_CONFIG.riverPlatforms.maxInterval);
       lane.platformType = randomFrom(GAME_CONFIG.riverPlatforms.laneTypes);
+      const platformW = GAME_CONFIG.riverPlatforms.widthByType[lane.platformType] ?? 1.1;
+      const maxIntervalByGap = GAME_CONFIG.riverPlatforms.maxGapSeconds - platformW / lane.speed;
+      lane.interval = clamp(
+        randRange(GAME_CONFIG.riverPlatforms.minInterval, GAME_CONFIG.riverPlatforms.maxInterval),
+        GAME_CONFIG.riverPlatforms.minInterval,
+        Math.max(GAME_CONFIG.riverPlatforms.minInterval, maxIntervalByGap)
+      );
+      this.seedWaterLanePlatforms(lane);
     } else if (type === 'rail') {
       lane.speed = randRange(5.1, 7.2) + this.score * 0.03;
-      lane.interval = randRange(4.7, 7.7);
+      lane.interval = randRange(4.9, 7.8);
+      lane.warningLead = GAME_CONFIG.trainWarning.leadTime;
+      lane.warningActive = false;
+      lane.pendingSpawn = false;
     }
     this.laneCache.set(y, lane);
+  }
+
+  seedWaterLanePlatforms(lane) {
+    const count = GAME_CONFIG.riverPlatforms.minLanePlatformCount;
+    for (let i = 0; i < count; i += 1) {
+      const spacing = i * (GAME_CONFIG.cols / count);
+      const x = lane.direction > 0 ? -1.2 + spacing : GAME_CONFIG.cols + 1.2 - spacing;
+      this.platforms.push({
+        id: this.nextPlatformId++,
+        type: lane.platformType,
+        x,
+        prevX: x,
+        y: lane.y,
+        dir: lane.direction,
+        speed: lane.speed,
+        w: GAME_CONFIG.riverPlatforms.widthByType[lane.platformType] ?? 1.1,
+        h: GAME_CONFIG.riverPlatforms.heightByType[lane.platformType] ?? 0.45
+      });
+    }
   }
 
   spawnHazard(lane) {
@@ -266,8 +301,6 @@ export class Game {
     if (lane.type !== 'water') return;
     const platformType = lane.platformType ?? randomFrom(GAME_CONFIG.riverPlatforms.laneTypes);
     const startX = lane.direction > 0 ? -1.2 : GAME_CONFIG.cols + 1.2;
-    const width = GAME_CONFIG.riverPlatforms.widthByType[platformType] ?? 1.1;
-    const height = GAME_CONFIG.riverPlatforms.heightByType[platformType] ?? 0.45;
     this.platforms.push({
       id: this.nextPlatformId++,
       type: platformType,
@@ -276,8 +309,8 @@ export class Game {
       y: lane.y,
       dir: lane.direction,
       speed: lane.speed,
-      w: width,
-      h: height
+      w: GAME_CONFIG.riverPlatforms.widthByType[platformType] ?? 1.1,
+      h: GAME_CONFIG.riverPlatforms.heightByType[platformType] ?? 0.45
     });
   }
 
@@ -294,13 +327,17 @@ export class Game {
       const occupied = this.coins.some((coin) => coin.x === x && Math.abs(coin.y - y) < 2);
       if (occupied) continue;
 
-      this.coins.push({ id: this.nextCoinId++, x, y, bobSeed: Math.random() * 1000 });
+      this.coins.push({ id: this.nextCoinId++, x, y, bobSeed: Math.random() * 1000, w: 0.32, h: 0.32 });
       return;
     }
   }
 
   collectCoinAtPlayer() {
-    const coinIndex = this.coins.findIndex((coin) => coin.x === this.player.x && coin.y === this.player.y);
+    const playerEntity = this.getPlayerCollisionEntity();
+    const coinIndex = this.coins.findIndex((coin) => {
+      const coinEntity = this.getCoinCollisionEntity(coin);
+      return this.collisionSystem.narrowPhase(playerEntity, 'player', this.player.facing, coinEntity, 'collectible', 'forward', this.tile);
+    });
     if (coinIndex < 0) return;
 
     this.coins.splice(coinIndex, 1);
@@ -342,8 +379,19 @@ export class Game {
       if (lane.type === 'water') minInterval = GAME_CONFIG.riverPlatforms.minInterval;
       if (lane.type === 'rail') minInterval = 3.35;
       const interval = Math.max(minInterval, lane.interval / difficulty);
+
+      if (lane.type === 'rail') {
+        const untilSpawn = interval - lane.timer;
+        lane.warningActive = untilSpawn <= lane.warningLead;
+        this.trainWarnings.set(lane.y, {
+          active: lane.warningActive,
+          phase: Math.sin(this.time * GAME_CONFIG.trainWarning.flashHz * Math.PI * 2)
+        });
+      }
+
       if (lane.timer >= interval) {
         lane.timer = 0;
+        lane.warningActive = false;
         if (lane.type === 'water') this.spawnPlatform(lane);
         else this.spawnHazard(lane);
       }
@@ -386,30 +434,72 @@ export class Game {
     }
   }
 
-  findPlatformUnderPlayerAt(x, y) {
-    const padding = GAME_CONFIG.riverPlatforms.hitboxPaddingX;
+  findPlatformUnderPoint(x, y) {
     return this.platforms.find((platform) => {
       if (platform.y !== y) return false;
-      const halfWidth = platform.w * 0.5 - padding;
-      return Math.abs(platform.x - x) <= halfWidth;
+      const platformEntity = this.getPlatformCollisionEntity(platform);
+      const playerProbe = {
+        x: x - 0.5,
+        y,
+        screenY: this.worldToScreen(0, y).y,
+        w: 0.15,
+        h: 0.58
+      };
+      return this.collisionSystem.narrowPhase(playerProbe, 'player', this.player.facing, platformEntity, 'platform', 'forward', this.tile);
     });
+  }
+
+  getPlayerCollisionEntity() {
+    const laneScreen = this.worldToScreen(0, this.player.drawY).y;
+    return {
+      x: this.player.drawX,
+      y: this.player.drawY,
+      screenY: laneScreen,
+      w: GAME_CONFIG.collisions.profiles.player.width,
+      h: GAME_CONFIG.collisions.profiles.player.height
+    };
+  }
+
+  getHazardCollisionEntity(hazard) {
+    const laneScreen = this.worldToScreen(0, hazard.y).y;
+    return { ...hazard, screenY: laneScreen };
+  }
+
+  getPlatformCollisionEntity(platform) {
+    const laneScreen = this.worldToScreen(0, platform.y).y;
+    return { ...platform, screenY: laneScreen + this.tile * 0.03 };
+  }
+
+  getCoinCollisionEntity(coin) {
+    const laneScreen = this.worldToScreen(0, coin.y).y;
+    return { ...coin, screenY: laneScreen + this.tile * 0.08 };
   }
 
   handleCollisions(dt) {
     const lane = this.laneCache.get(this.player.y);
     if (!lane) return;
 
+    const playerEntity = this.getPlayerCollisionEntity();
+
     for (const h of this.hazards) {
-      if (Math.abs(h.y - this.player.y) > 0.2) continue;
+      if (Math.abs(h.y - this.player.y) > 0.25) continue;
+      const hazardEntity = this.getHazardCollisionEntity(h);
+      const playerBroad = this.collisionSystem.getAABB(playerEntity, 'player', this.tile);
+      const hazardBroad = this.collisionSystem.getAABB(hazardEntity, h.type === 'maxTrain' ? 'maxTrain' : h.type.startsWith('car') ? 'car' : h.type === 'bike1' ? 'bike' : 'scooter', this.tile, {
+        swept: true
+      });
+      if (!this.collisionSystem.broadPhase(playerBroad, hazardBroad)) continue;
 
-      const playerRadius = 0.23;
-      const hazardRadius = h.w * 0.5;
-      const nowGap = Math.abs(h.x - this.player.drawX);
-      const minX = Math.min(h.prevX, h.x) - playerRadius;
-      const maxX = Math.max(h.prevX, h.x) + playerRadius;
-      const sweptHit = this.player.drawX >= minX - hazardRadius && this.player.drawX <= maxX + hazardRadius;
-
-      if (nowGap <= hazardRadius + playerRadius || sweptHit) {
+      const hit = this.collisionSystem.narrowPhase(
+        playerEntity,
+        'player',
+        this.player.facing,
+        hazardEntity,
+        h.type === 'maxTrain' ? 'maxTrain' : h.type.startsWith('car') ? 'car' : h.type === 'bike1' ? 'bike' : 'scooter',
+        'forward',
+        this.tile
+      );
+      if (hit) {
         this.kill(h.type === 'maxTrain' ? 'A MAX train blasted through your lane.' : 'Portland traffic cut off your route.');
         return;
       }
@@ -430,14 +520,15 @@ export class Game {
     }
 
     if (lane.type === 'water') {
-      const platform = this.findPlatformUnderPlayerAt(this.player.drawX, this.player.y);
+      const platform = this.findPlatformUnderPoint(this.player.drawX + 0.5, this.player.y);
       if (!platform) {
         this.kill('The Willamette rain runoff swept you away.');
         return;
       }
 
       const rideStep = platform.speed * platform.dir * dt;
-      this.player.drawX = clamp(this.player.drawX + rideStep, 0, GAME_CONFIG.cols - 1);
+      const stableStep = Math.abs(rideStep) > GAME_CONFIG.riverPlatforms.attachmentStability ? rideStep : 0;
+      this.player.drawX = clamp(this.player.drawX + stableStep, 0, GAME_CONFIG.cols - 1);
       this.player.x = clamp(Math.round(this.player.drawX), 0, GAME_CONFIG.cols - 1);
 
       if (this.player.drawX <= 0.03 || this.player.drawX >= GAME_CONFIG.cols - 1.03) {
@@ -497,14 +588,12 @@ export class Game {
     this.drawPlayer();
     this.drawParticles();
     this.drawRain();
+    this.drawCollisionDebug();
     ctx.restore();
   }
 
   worldToScreen(x, y) {
-    return {
-      x: x * this.tile,
-      y: this.worldHeight - (y - this.cameraY + 1) * this.tile
-    };
+    return { x: x * this.tile, y: this.worldHeight - (y - this.cameraY + 1) * this.tile };
   }
 
   drawLanes() {
@@ -549,6 +638,18 @@ export class Game {
         ctx.fillRect(0, pos.y + this.tile * 0.74, this.worldWidth, 6);
         ctx.fillStyle = '#8f8a7a';
         for (let x = 0; x < this.worldWidth; x += 26) ctx.fillRect(x, pos.y + this.tile * 0.48, 10, 5);
+
+        const warning = this.trainWarnings.get(y);
+        if (warning?.active) {
+          const alpha = warning.phase > 0 ? 0.55 : 0.2;
+          ctx.fillStyle = `rgba(200, 54, 54, ${alpha})`;
+          ctx.fillRect(0, pos.y + this.tile * 0.06, this.worldWidth, this.tile * 0.88);
+          ctx.fillStyle = `rgba(255, 240, 240, ${Math.max(0.24, alpha - 0.08)})`;
+          ctx.beginPath();
+          ctx.arc(this.worldWidth - 20, pos.y + this.tile * 0.5, 9, 0, Math.PI * 2);
+          ctx.arc(20, pos.y + this.tile * 0.5, 9, 0, Math.PI * 2);
+          ctx.fill();
+        }
       } else {
         ctx.fillStyle = '#4a6047';
         ctx.fillRect(0, pos.y, this.worldWidth, this.tile);
@@ -618,9 +719,7 @@ export class Game {
         ctx.fillStyle = '#7d5a3f';
         ctx.fillRect(x, y + height * 0.15, width, height * 0.7);
         ctx.fillStyle = '#8f6747';
-        for (let i = 0; i < 4; i += 1) {
-          ctx.fillRect(x + i * (width / 4), y + height * 0.2, 2, height * 0.6);
-        }
+        for (let i = 0; i < 4; i += 1) ctx.fillRect(x + i * (width / 4), y + height * 0.2, 2, height * 0.6);
       }
 
       ctx.fillStyle = 'rgba(0,0,0,0.2)';
@@ -704,9 +803,8 @@ export class Game {
     ctx.fill();
 
     const sprite = this.playerSprites[this.player.facing];
-    if (sprite && sprite.complete) {
-      ctx.drawImage(sprite, x, y, w, h);
-    } else {
+    if (sprite && sprite.complete) ctx.drawImage(sprite, x, y, w, h);
+    else {
       ctx.fillStyle = '#f4a261';
       ctx.fillRect(x, y, w, h);
     }
@@ -739,5 +837,29 @@ export class Game {
 
     ctx.fillStyle = 'rgba(41, 52, 59, 0.2)';
     ctx.fillRect(0, 0, this.worldWidth, this.worldHeight);
+  }
+
+  drawCollisionDebug() {
+    if (!this.collisionSystem.debugEnabled) return;
+    // Toggle with the dev key in config (default: C) to visualize broad boxes, mask footprint, and ride zones.
+    const entries = [
+      { entity: this.getPlayerCollisionEntity(), type: 'player', orientation: this.player.facing, color: 'rgba(245, 219, 111, 0.7)', showMask: true }
+    ];
+
+    for (const h of this.hazards) {
+      entries.push({
+        entity: this.getHazardCollisionEntity(h),
+        type: h.type === 'maxTrain' ? 'maxTrain' : h.type.startsWith('car') ? 'car' : h.type === 'bike1' ? 'bike' : 'scooter',
+        color: 'rgba(238, 104, 104, 0.7)',
+        swept: true,
+        showMask: false
+      });
+    }
+
+    for (const p of this.platforms) {
+      entries.push({ entity: this.getPlatformCollisionEntity(p), type: 'platform', color: 'rgba(111, 214, 170, 0.7)', showMask: false });
+    }
+
+    this.collisionSystem.drawDebug(this.ctx, entries, this.tile);
   }
 }

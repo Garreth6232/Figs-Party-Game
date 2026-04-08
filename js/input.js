@@ -10,12 +10,13 @@ const KEY_TO_DIR = {
 };
 
 export class InputManager {
-  constructor({ canvas, touchContainer, onMove, onPause, onSuperJump }) {
+  constructor({ canvas, touchContainer, onMove, onPause, onSuperJump, onToggleDebug }) {
     this.canvas = canvas;
     this.touchContainer = touchContainer;
     this.onMove = onMove;
     this.onPause = onPause;
     this.onSuperJump = onSuperJump;
+    this.onToggleDebug = onToggleDebug;
     this.swipeStart = null;
     this.holdInterval = null;
     this.holdDir = null;
@@ -26,6 +27,10 @@ export class InputManager {
       if (event.repeat) return;
       if (event.code === 'KeyP' || event.code === 'Escape') {
         this.onPause();
+        return;
+      }
+      if (event.code === 'KeyC') {
+        this.onToggleDebug?.();
         return;
       }
       if (event.code === 'KeyJ' || event.code === 'Space') {
@@ -68,11 +73,8 @@ export class InputManager {
       this.swipeStart = null;
       const threshold = 24;
       if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) return;
-      if (Math.abs(dx) > Math.abs(dy)) {
-        this.onMove(dx > 0 ? 'right' : 'left');
-      } else {
-        this.onMove(dy > 0 ? 'down' : 'up');
-      }
+      if (Math.abs(dx) > Math.abs(dy)) this.onMove(dx > 0 ? 'right' : 'left');
+      else this.onMove(dy > 0 ? 'down' : 'up');
     });
     this.canvas.addEventListener('pointercancel', () => {
       this.swipeStart = null;

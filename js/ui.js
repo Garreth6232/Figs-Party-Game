@@ -1,3 +1,5 @@
+import { ASSET_GUIDE } from './config.js';
+
 export class UIController {
   constructor() {
     this.scoreEl = document.getElementById('scoreValue');
@@ -12,14 +14,35 @@ export class UIController {
     this.startScreen = document.getElementById('startScreen');
     this.pauseScreen = document.getElementById('pauseScreen');
     this.gameOverScreen = document.getElementById('gameOverScreen');
+    this.infoScreen = document.getElementById('infoScreen');
+    this.infoList = document.getElementById('infoList');
     this.messageEl = document.getElementById('gameOverMessage');
     this.startBtn = document.getElementById('startBtn');
     this.resumeBtn = document.getElementById('resumeBtn');
     this.restartBtn = document.getElementById('restartBtn');
-    this.overlays = [this.startScreen, this.pauseScreen, this.gameOverScreen];
+    this.closeInfoBtn = document.getElementById('closeInfoBtn');
+    this.overlays = [this.startScreen, this.pauseScreen, this.gameOverScreen, this.infoScreen];
     this.scorePopTimer = null;
     this.bestPopTimer = null;
     this.toastTimer = null;
+    this.renderAssetGuide();
+  }
+
+  renderAssetGuide() {
+    if (!this.infoList) return;
+    this.infoList.innerHTML = '';
+    for (const item of ASSET_GUIDE) {
+      const row = document.createElement('article');
+      row.className = 'info-item';
+      row.innerHTML = `
+        <img src="${item.preview}" alt="${item.name} preview" loading="lazy" />
+        <div>
+          <h3>${item.name} <span class="badge badge-${item.action}">${item.action}</span></h3>
+          <p>${item.description}</p>
+        </div>
+      `;
+      this.infoList.append(row);
+    }
   }
 
   pulseScore(isBest = false) {
@@ -84,6 +107,12 @@ export class UIController {
     this.pauseScreen.classList.toggle('hidden', !show);
     this.pauseScreen.setAttribute('aria-hidden', String(!show));
     if (show) this.resumeBtn?.focus();
+  }
+
+  showInfo(show) {
+    this.infoScreen.classList.toggle('hidden', !show);
+    this.infoScreen.setAttribute('aria-hidden', String(!show));
+    if (show) this.closeInfoBtn?.focus();
   }
 
   showGameOver(score, message) {

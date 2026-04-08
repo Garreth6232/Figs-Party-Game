@@ -222,6 +222,81 @@ button:focus-visible {
   width: min(420px, calc(100% - 24px));
 }
 
+.info-card {
+  width: min(760px, calc(100% - 24px));
+  max-height: min(80vh, 740px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.info-list {
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  padding: 4px;
+}
+
+.info-item {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 10px;
+  text-align: left;
+  border: 1px solid rgba(182, 194, 180, 0.24);
+  background: rgba(56, 67, 70, 0.48);
+  border-radius: 12px;
+  padding: 8px;
+}
+
+.info-item img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  align-self: center;
+}
+
+.info-item h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.98rem;
+}
+
+.info-item p {
+  margin: 4px 0 0;
+  color: #dbe5de;
+  font-size: 0.88rem;
+}
+
+.badge {
+  font-size: 0.67rem;
+  border-radius: 999px;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.badge-avoid {
+  background: rgba(197, 111, 92, 0.24);
+  border: 1px solid rgba(197, 111, 92, 0.8);
+}
+
+.badge-collect {
+  background: rgba(226, 201, 111, 0.2);
+  border: 1px solid rgba(226, 201, 111, 0.72);
+}
+
+.badge-ride {
+  background: rgba(111, 214, 170, 0.16);
+  border: 1px solid rgba(111, 214, 170, 0.68);
+}
+
+.badge-ignore {
+  background: rgba(170, 182, 196, 0.18);
+  border: 1px solid rgba(170, 182, 196, 0.65);
+}
+
 .card h2 {
   margin: 0 0 8px;
   font-size: clamp(1.35rem, 4vw, 1.9rem);

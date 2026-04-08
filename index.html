@@ -41,6 +41,7 @@
             <span>Super Jumps</span>
             <strong id="superJumpValue" aria-live="polite">0</strong>
           </div>
+          <button id="infoBtn" class="icon-btn" type="button" aria-label="Open asset info">ℹ️</button>
           <button id="muteBtn" class="icon-btn" type="button" aria-label="Toggle sound" aria-pressed="false">🔊</button>
         </div>
       </header>
@@ -59,6 +60,7 @@
               <p><kbd>WASD</kbd> / <kbd>Arrows</kbd> to move</p>
               <p><kbd>J</kbd> or <kbd>Space</kbd> to use a Super Jump</p>
               <p><kbd>P</kbd> or <kbd>Esc</kbd> to pause</p>
+              <p><kbd>I</kbd> opens the Info guide and <kbd>C</kbd> toggles collision debug.</p>
               <p class="hint">Collect 10 coins to charge 1 Super Jump (20-lane launch).</p>
             </div>
             <div class="menu-actions">
@@ -73,6 +75,17 @@
             <p>Take a breath. Press <kbd>P</kbd> to continue.</p>
             <div class="menu-actions">
               <button id="resumeBtn" class="primary" type="button">Resume</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="infoScreen" class="overlay hidden" aria-labelledby="infoTitle" aria-hidden="true">
+          <div class="card info-card" role="dialog" aria-modal="true">
+            <h2 id="infoTitle">Asset Guide</h2>
+            <p>Review each core asset and whether you should avoid, collect, ride, or ignore it.</p>
+            <div id="infoList" class="info-list" aria-label="Asset explanations"></div>
+            <div class="menu-actions">
+              <button id="closeInfoBtn" class="primary" type="button">Close</button>
             </div>
           </div>
         </section>
