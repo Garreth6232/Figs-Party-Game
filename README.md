@@ -1,6 +1,6 @@
 # Fig Game
 
-A polished, endless arcade lane-dodger browser game with a Portland-inspired rainy city theme.
+A polished endless arcade lane-dodger browser game with a rainy city visual style.
 
 ## Architecture and file structure
 
@@ -62,9 +62,9 @@ Replace files in these folders with your own art/audio while keeping names or up
 
 - `/assets/player` → `figForward` (png), `figLeft` (png), `figRight` (png), `figBack` (png), `figSJ` (png)
 - `/assets/vehicles` → `car1` (png) is reused by standard road variants (`car2`, `car3`, `bike1`, `scooter1`), plus `maxTrain` (png)
-- `/assets/hazards` → `log1`, `raft1`, `kayak1`
+- `/assets/hazards` → `log1` (jpg), `raft1` (jpg), `kayak1` (jpg)
 - `/assets/collectibles` → `coin` (png)
-- `/assets/environment` → `riverTile` (png), `roadTile`, `sidewalkTile`, `bridgeTile`, `tree1` (png), `foodCart1`
+- `/assets/environment` → `riverTile` (png), `roadTile` (jpg), `sidewalkTile` (jpg), `bridgeTile`, `tree1` (png), `foodCart1`
 - `/assets/ui` → UI-only indicators (example: `superJumpReady`)
 - `/assets/audio` → optional audio files
 

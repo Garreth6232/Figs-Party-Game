@@ -15,17 +15,17 @@
     "maxTrain": "assets/vehicles/maxTrain.png"
   },
   "hazards": {
-    "log1": "assets/hazards/log1.svg",
-    "raft1": "assets/hazards/raft1.svg",
-    "kayak1": "assets/hazards/kayak1.svg"
+    "log1": "assets/hazards/log1.jpg",
+    "raft1": "assets/hazards/raft1.jpg",
+    "kayak1": "assets/hazards/kayak1.jpg"
   },
   "collectibles": {
     "coin": "assets/collectibles/coin.png"
   },
   "environment": {
     "riverTile": "assets/environment/riverTile.png",
-    "roadTile": "assets/environment/roadTile.svg",
-    "sidewalkTile": "assets/environment/sidewalkTile.svg",
+    "roadTile": "assets/environment/roadTile.jpg",
+    "sidewalkTile": "assets/environment/sidewalkTile.jpg",
     "bridgeTile": "assets/environment/bridgeTile.svg",
     "tree1": "assets/environment/tree1.png",
     "foodCart1": "assets/environment/foodCart1.svg"

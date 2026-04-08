@@ -6,7 +6,7 @@
     <title>Fig Game</title>
     <meta
       name="description"
-      content="Fig Game is a Portland-themed endless arcade lane-dodger built for fast restarts and game feel."
+      content="Fig Game is a stylish endless lane-dodger built for fast restarts and precise game feel."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -19,9 +19,9 @@
   <body>
     <div class="game-shell">
       <header class="hud" role="banner">
-        <div class="brand">
-          <h1>Fig Game</h1>
-          <p>Portland arcade survival</p>
+        <div class="brand" aria-label="Fig Game">
+          <p class="brand-kicker">Arcade Rush</p>
+          <h1 class="logo-wordmark"><span>Fig</span><strong>Game</strong></h1>
         </div>
 
         <div class="stats" aria-label="Game stats">
@@ -54,7 +54,7 @@
           <div class="card" role="dialog" aria-modal="true">
             <h2 id="startTitle">Welcome to Fig Game</h2>
             <p>
-              Dash through rainy Portland streets, floating river lanes, and MAX tracks. Keyboard and touch supported.
+              Dash through rainy lanes, floating river crossings, and train tracks. Keyboard and touch supported.
             </p>
             <div class="controls-list" aria-label="Controls">
               <p><kbd>WASD</kbd> / <kbd>Arrows</kbd> to move</p>
@@ -132,7 +132,7 @@
         <section id="gameOverScreen" class="overlay hidden" aria-labelledby="gameOverTitle" aria-hidden="true">
           <div class="card" role="dialog" aria-modal="true">
             <h2 id="gameOverTitle">Run Over</h2>
-            <p id="gameOverMessage">You reached lane 0.</p>
+            <p id="gameOverMessage" class="game-over-copy">You reached lane 0.</p>
             <div class="menu-actions">
               <button id="enterNameBtn" class="secondary hidden" type="button">Enter Name</button>
               <button id="restartBtn" class="primary" type="button">Play Again</button>
@@ -167,7 +167,7 @@
 
         <section id="leaderboardScreen" class="overlay hidden" aria-labelledby="leaderboardTitle" aria-hidden="true">
           <div class="card small" role="dialog" aria-modal="true">
-            <h2 id="leaderboardTitle">Top 10 Arcade Board</h2>
+            <h2 id="leaderboardTitle">Top 10 Runs</h2>
             <div id="leaderboardRows" class="leaderboard-rows" aria-live="polite"></div>
             <div class="menu-actions">
               <button id="closeLeaderboardBtn" class="primary" type="button">Back</button>
@@ -176,15 +176,6 @@
         </section>
       </main>
 
-      <nav class="touch-controls" aria-label="Touch controls">
-        <button data-dir="up" type="button" aria-label="Move up">▲</button>
-        <div class="middle-row">
-          <button data-dir="left" type="button" aria-label="Move left">◀</button>
-          <button data-dir="down" type="button" aria-label="Move down">▼</button>
-          <button data-dir="right" type="button" aria-label="Move right">▶</button>
-        </div>
-        <button id="superJumpBtn" data-action="superjump" type="button" aria-label="Use super jump">⤴ SUPER</button>
-      </nav>
     </div>
 
     <script type="module" src="js/main.js"></script>

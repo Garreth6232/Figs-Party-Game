@@ -127,7 +127,7 @@ export const ASSET_METADATA = [
   },
   {
     key: 'log1',
-    path: 'assets/hazards/log1.svg',
+    path: 'assets/hazards/log1.jpg',
     category: 'river platforms',
     label: 'Log',
     description: 'Floating river platform that can carry the player.',
@@ -137,7 +137,7 @@ export const ASSET_METADATA = [
   },
   {
     key: 'raft1',
-    path: 'assets/hazards/raft1.svg',
+    path: 'assets/hazards/raft1.jpg',
     category: 'river platforms',
     label: 'Raft',
     description: 'Stable floating platform for crossing water lanes.',
@@ -147,7 +147,7 @@ export const ASSET_METADATA = [
   },
   {
     key: 'kayak1',
-    path: 'assets/hazards/kayak1.svg',
+    path: 'assets/hazards/kayak1.jpg',
     category: 'river platforms',
     label: 'Kayak',
     description: 'Narrow floating platform that still supports river traversal.',
@@ -177,7 +177,7 @@ export const ASSET_METADATA = [
   },
   {
     key: 'roadTile',
-    path: 'assets/environment/roadTile.svg',
+    path: 'assets/environment/roadTile.jpg',
     category: 'environment tiles',
     label: 'Road Tile',
     description: 'Road lane base tile texture.',
@@ -187,7 +187,7 @@ export const ASSET_METADATA = [
   },
   {
     key: 'sidewalkTile',
-    path: 'assets/environment/sidewalkTile.svg',
+    path: 'assets/environment/sidewalkTile.jpg',
     category: 'environment tiles',
     label: 'Sidewalk Tile',
     description: 'Optional decorative sidewalk tile.',
@@ -220,7 +220,7 @@ export const ASSET_METADATA = [
     path: 'assets/environment/foodCart1.svg',
     category: 'props',
     label: 'Food Cart',
-    description: 'Decorative Portland food cart prop.',
+    description: 'Decorative city food cart prop.',
     interactionType: 'ignore',
     visibleInInfoMenu: false,
     visibleInDevAssetBrowser: true

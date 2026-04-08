@@ -33,7 +33,6 @@ const closeInfoBtn = document.getElementById('closeInfoBtn');
 const startBtn = document.getElementById('startBtn');
 const restartBtn = document.getElementById('restartBtn');
 const resumeBtn = document.getElementById('resumeBtn');
-const superJumpBtn = document.getElementById('superJumpBtn');
 
 let infoPausedRun = false;
 let infoReturnScreen = 'start';
@@ -163,10 +162,6 @@ resumeBtn.addEventListener('click', () => {
   game.togglePause();
   ui.showPause(false);
   audio.play('ui');
-});
-
-superJumpBtn?.addEventListener('click', () => {
-  game.useSuperJump();
 });
 
 const input = new InputManager({
