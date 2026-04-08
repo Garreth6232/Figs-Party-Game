@@ -23,9 +23,10 @@
     "coin": "assets/collectibles/coin.png"
   },
   "environment": {
+    "grassTile": "assets/environment/grassTile.jpg",
     "riverTile": "assets/environment/riverTile.png",
     "roadTile": "assets/environment/roadTile.jpg",
-    "sidewalkTile": "assets/environment/sidewalkTile.jpg",
+    "sidewalkTile": "assets/environment/SidewalkTile.jpg",
     "bridgeTile": "assets/environment/bridgeTile.svg",
     "tree1": "assets/environment/tree1.png",
     "foodCart1": "assets/environment/foodCart1.svg"

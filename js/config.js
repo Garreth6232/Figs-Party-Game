@@ -166,6 +166,16 @@ export const ASSET_METADATA = [
     visibleInDevAssetBrowser: true
   },
   {
+    key: 'grassTile',
+    path: 'assets/environment/grassTile.jpg',
+    category: 'environment tiles',
+    label: 'Grass Tile',
+    description: 'Grass lane tile texture used in all grass/background rows.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
     key: 'riverTile',
     path: 'assets/environment/riverTile.png',
     category: 'environment tiles',
@@ -187,7 +197,7 @@ export const ASSET_METADATA = [
   },
   {
     key: 'sidewalkTile',
-    path: 'assets/environment/sidewalkTile.jpg',
+    path: 'assets/environment/SidewalkTile.jpg',
     category: 'environment tiles',
     label: 'Sidewalk Tile',
     description: 'Optional decorative sidewalk tile.',
@@ -259,7 +269,7 @@ export const ASSET_MANIFEST = {
   vehicles: buildAssetGroup(['car1', 'car2', 'car3', 'bike1', 'scooter1', 'maxTrain']),
   hazards: buildAssetGroup(['log1', 'raft1', 'kayak1']),
   collectibles: buildAssetGroup(['coin']),
-  environment: buildAssetGroup(['riverTile', 'roadTile', 'sidewalkTile', 'bridgeTile', 'tree1', 'foodCart1']),
+  environment: buildAssetGroup(['grassTile', 'riverTile', 'roadTile', 'sidewalkTile', 'bridgeTile', 'tree1', 'foodCart1']),
   ui: buildAssetGroup(['superJumpReady']),
   warnings: buildAssetGroup(['trainWarning']),
   audio: {
@@ -390,6 +400,10 @@ export const GAME_CONFIG = {
     road: '#4c5660',
     water: '#3f5d73',
     rail: '#646c55'
+  },
+  environmentTiles: {
+    baseWorldUnits: { width: 1, height: 1 },
+    roadShoulderHeightRatio: 0.14
   },
   laneWeights: [
     { type: 'grass', weight: 2.2 },

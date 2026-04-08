@@ -71,6 +71,7 @@ export class Game {
     }
 
     const worldSprites = {
+      grassTile: ASSET_MANIFEST.environment.grassTile,
       riverTile: ASSET_MANIFEST.environment.riverTile,
       roadTile: ASSET_MANIFEST.environment.roadTile,
       sidewalkTile: ASSET_MANIFEST.environment.sidewalkTile,
@@ -912,6 +913,33 @@ export class Game {
     return { x: x * this.tile, y: this.worldHeight - (y - this.cameraY + 1) * this.tile };
   }
 
+  getLaneScreenY(laneY) {
+    return Math.round(this.worldToScreen(0, laneY).y);
+  }
+
+  getLaneScreenHeight() {
+    return Math.max(1, Math.round(this.tile));
+  }
+
+  drawLaneTexture(sprite, { y, height, fallbackColor }) {
+    const ctx = this.ctx;
+    if (!sprite?.complete || !sprite.naturalWidth || !sprite.naturalHeight) {
+      ctx.fillStyle = fallbackColor;
+      ctx.fillRect(0, y, this.worldWidth, height);
+      return;
+    }
+
+    const worldUnits = GAME_CONFIG.environmentTiles.baseWorldUnits;
+    const tileHeight = Math.max(1, Math.round(height * (worldUnits.height ?? 1)));
+    const tileWidth = Math.max(
+      1,
+      Math.round((worldUnits.width ?? 1) * tileHeight * (sprite.naturalWidth / sprite.naturalHeight))
+    );
+    for (let x = 0; x < this.worldWidth + tileWidth; x += tileWidth) {
+      ctx.drawImage(sprite, x, y, tileWidth, tileHeight);
+    }
+  }
+
   drawLanes() {
     const ctx = this.ctx;
     const from = Math.floor(this.cameraY) - 2;
@@ -920,28 +948,29 @@ export class Game {
     for (let y = from; y <= to; y += 1) {
       this.ensureLane(y);
       const lane = this.laneCache.get(y);
-      const pos = this.worldToScreen(0, y);
+      const laneY = this.getLaneScreenY(y);
+      const laneHeight = this.getLaneScreenHeight();
       ctx.fillStyle = GAME_CONFIG.lanePalette[lane.type];
-      ctx.fillRect(0, pos.y, this.worldWidth, this.tile + 1);
+      ctx.fillRect(0, laneY, this.worldWidth, laneHeight + 1);
 
       if (lane.type === 'road') {
         const roadTile = this.environmentSprites.roadTile;
         const sidewalkTile = this.environmentSprites.sidewalkTile;
 
-        if (roadTile?.complete) ctx.drawImage(roadTile, 0, pos.y, this.worldWidth, this.tile);
-        else {
-          ctx.fillStyle = '#505962';
-          ctx.fillRect(0, pos.y + this.tile * 0.12, this.worldWidth, this.tile * 0.76);
-        }
+        this.drawLaneTexture(roadTile, { y: laneY, height: laneHeight, fallbackColor: '#505962' });
 
+        const shoulderHeight = Math.max(1, Math.round(laneHeight * GAME_CONFIG.environmentTiles.roadShoulderHeightRatio));
         if (sidewalkTile?.complete) {
-          const shoulderHeight = this.tile * 0.14;
-          ctx.drawImage(sidewalkTile, 0, pos.y, this.worldWidth, shoulderHeight);
-          ctx.drawImage(sidewalkTile, 0, pos.y + this.tile - shoulderHeight, this.worldWidth, shoulderHeight);
+          this.drawLaneTexture(sidewalkTile, { y: laneY, height: shoulderHeight, fallbackColor: '#5f7f69' });
+          this.drawLaneTexture(sidewalkTile, {
+            y: laneY + laneHeight - shoulderHeight,
+            height: shoulderHeight,
+            fallbackColor: '#5f7f69'
+          });
         } else {
           ctx.fillStyle = '#5f7f69';
-          ctx.fillRect(0, pos.y + this.tile * 0.1, this.worldWidth, this.tile * 0.14);
-          ctx.fillRect(0, pos.y + this.tile * 0.76, this.worldWidth, this.tile * 0.14);
+          ctx.fillRect(0, laneY + Math.round(laneHeight * 0.1), this.worldWidth, shoulderHeight);
+          ctx.fillRect(0, laneY + laneHeight - shoulderHeight - Math.round(laneHeight * 0.1), this.worldWidth, shoulderHeight);
         }
 
         ctx.strokeStyle = 'rgba(245, 245, 245, 0.55)';
@@ -949,49 +978,48 @@ export class Game {
         ctx.lineDashOffset = -(this.time * 58 * lane.direction);
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(0, pos.y + this.tile * 0.56);
-        ctx.lineTo(this.worldWidth, pos.y + this.tile * 0.56);
+        ctx.moveTo(0, laneY + Math.round(laneHeight * 0.56));
+        ctx.lineTo(this.worldWidth, laneY + Math.round(laneHeight * 0.56));
         ctx.stroke();
         ctx.setLineDash([]);
       } else if (lane.type === 'water') {
         const riverTile = this.environmentSprites.riverTile;
-        if (riverTile?.complete) ctx.drawImage(riverTile, 0, pos.y, this.worldWidth, this.tile);
-        else {
-          ctx.fillStyle = '#34576d';
-          ctx.fillRect(0, pos.y, this.worldWidth, this.tile);
-        }
+        this.drawLaneTexture(riverTile, { y: laneY, height: laneHeight, fallbackColor: '#34576d' });
 
         ctx.fillStyle = 'rgba(238, 242, 245, 0.14)';
         for (let i = 0; i < 4; i += 1) {
-          const waveY = pos.y + this.tile * 0.2 + i * 13 + Math.sin(this.time * 2.5 + i + lane.seed) * 3;
+          const waveY = laneY + laneHeight * 0.2 + i * 13 + Math.sin(this.time * 2.5 + i + lane.seed) * 3;
           ctx.fillRect(0, waveY, this.worldWidth, 3);
         }
       } else if (lane.type === 'rail') {
         ctx.fillStyle = '#6f755b';
-        ctx.fillRect(0, pos.y, this.worldWidth, this.tile);
+        ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
         ctx.fillStyle = '#616161';
-        ctx.fillRect(0, pos.y + this.tile * 0.2, this.worldWidth, 6);
-        ctx.fillRect(0, pos.y + this.tile * 0.74, this.worldWidth, 6);
+        ctx.fillRect(0, laneY + Math.round(laneHeight * 0.2), this.worldWidth, 6);
+        ctx.fillRect(0, laneY + Math.round(laneHeight * 0.74), this.worldWidth, 6);
         ctx.fillStyle = '#8f8a7a';
-        for (let x = 0; x < this.worldWidth; x += 26) ctx.fillRect(x, pos.y + this.tile * 0.48, 10, 5);
+        for (let x = 0; x < this.worldWidth; x += 26) ctx.fillRect(x, laneY + Math.round(laneHeight * 0.48), 10, 5);
 
         const warning = this.trainWarnings.get(y);
         if (warning?.active) {
           const alpha = warning.phase > 0 ? 0.55 : 0.2;
           ctx.fillStyle = `rgba(200, 54, 54, ${alpha})`;
-          ctx.fillRect(0, pos.y + this.tile * 0.06, this.worldWidth, this.tile * 0.88);
+          ctx.fillRect(0, laneY + Math.round(laneHeight * 0.06), this.worldWidth, Math.round(laneHeight * 0.88));
           ctx.fillStyle = `rgba(255, 240, 240, ${Math.max(0.24, alpha - 0.08)})`;
           ctx.beginPath();
-          ctx.arc(this.worldWidth - 20, pos.y + this.tile * 0.5, 9, 0, Math.PI * 2);
-          ctx.arc(20, pos.y + this.tile * 0.5, 9, 0, Math.PI * 2);
+          ctx.arc(this.worldWidth - 20, laneY + laneHeight * 0.5, 9, 0, Math.PI * 2);
+          ctx.arc(20, laneY + laneHeight * 0.5, 9, 0, Math.PI * 2);
           ctx.fill();
         }
       } else {
-        ctx.fillStyle = '#4a6047';
-        ctx.fillRect(0, pos.y, this.worldWidth, this.tile);
+        this.drawLaneTexture(this.environmentSprites.grassTile, {
+          y: laneY,
+          height: laneHeight,
+          fallbackColor: '#4a6047'
+        });
       }
 
-      this.drawProps(lane, pos.y);
+      this.drawProps(lane, laneY);
     }
   }
 
