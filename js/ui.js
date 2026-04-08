@@ -342,12 +342,16 @@ export class UIController {
   }
 
   showInfo(show) {
-    this.infoScreen.classList.toggle('hidden', !show);
-    this.infoScreen.setAttribute('aria-hidden', String(!show));
     if (show) {
+      this.hideAllOverlays();
+      this.infoScreen.classList.remove('hidden');
+      this.infoScreen.setAttribute('aria-hidden', 'false');
       this.resetInfoPanels();
       this.closeInfoBtn?.focus();
+      return;
     }
+    this.infoScreen.classList.add('hidden');
+    this.infoScreen.setAttribute('aria-hidden', 'true');
   }
 
   showGameOver(score, message, { canEnterName = false } = {}) {

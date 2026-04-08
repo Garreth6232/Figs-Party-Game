@@ -36,6 +36,7 @@ const resumeBtn = document.getElementById('resumeBtn');
 const superJumpBtn = document.getElementById('superJumpBtn');
 
 let infoPausedRun = false;
+let infoReturnScreen = 'start';
 
 const openLeaderboard = (fromScreen) => {
   leaderboardReturnScreen = fromScreen;
@@ -99,6 +100,10 @@ muteBtn.addEventListener('click', () => {
 
 const setInfoOpen = (isOpen) => {
   if (isOpen) {
+    if (!ui.leaderboardScreen.classList.contains('hidden')) infoReturnScreen = 'leaderboard';
+    else if (!ui.gameOverScreen.classList.contains('hidden')) infoReturnScreen = 'game_over';
+    else if (!ui.pauseScreen.classList.contains('hidden')) infoReturnScreen = 'pause';
+    else infoReturnScreen = 'start';
     if (game.state === GAME_STATES.PLAYING) {
       game.setState(GAME_STATES.PAUSED);
       infoPausedRun = true;
@@ -107,7 +112,14 @@ const setInfoOpen = (isOpen) => {
   } else {
     ui.showInfo(false);
     if (infoPausedRun && game.state === GAME_STATES.PAUSED) game.setState(GAME_STATES.PLAYING);
+    if (!infoPausedRun) {
+      if (infoReturnScreen === 'leaderboard') ui.showLeaderboard();
+      else if (infoReturnScreen === 'game_over') ui.showGameOver(lastGameOver.score, lastGameOver.message, { canEnterName: pendingLeaderboardEntry });
+      else if (infoReturnScreen === 'pause') ui.showPause(true);
+      else ui.showStart();
+    }
     infoPausedRun = false;
+    infoReturnScreen = 'start';
   }
 };
 
@@ -127,6 +139,13 @@ window.addEventListener('keydown', (event) => {
   event.preventDefault();
   const hidden = ui.infoScreen.classList.contains('hidden');
   setInfoOpen(hidden);
+});
+
+window.addEventListener('keydown', (event) => {
+  if (event.code !== 'Escape') return;
+  if (ui.infoScreen.classList.contains('hidden')) return;
+  event.preventDefault();
+  setInfoOpen(false);
 });
 
 const beginRun = () => {

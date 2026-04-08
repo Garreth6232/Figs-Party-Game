@@ -195,6 +195,7 @@ button:focus-visible {
   background: rgba(20, 27, 30, 0.62);
   transition: opacity 0.22s ease, backdrop-filter 0.22s ease;
   backdrop-filter: blur(2px);
+  z-index: 10;
 }
 
 .overlay.hidden {
@@ -225,9 +226,11 @@ button:focus-visible {
 .info-card {
   width: min(760px, calc(100% - 24px));
   max-height: min(80vh, 740px);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  min-height: min(68vh, 620px);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
   text-align: left;
 }
 
@@ -450,10 +453,11 @@ kbd {
 }
 
 .info-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: none;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
   min-height: 0;
+  height: 100%;
 }
 
 .info-panel-main {
@@ -461,10 +465,15 @@ kbd {
   min-height: 0;
 }
 
+.info-panel:not(.hidden) {
+  display: grid;
+}
+
 .info-panel-scroll {
   overflow: auto;
   min-height: 0;
   padding-right: 4px;
+  padding-bottom: 4px;
 }
 
 .info-panel-actions {
@@ -486,6 +495,13 @@ kbd {
   background: rgba(26, 35, 37, 0.82);
   color: var(--text);
   font: inherit;
+}
+
+.info-screen-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .error-text {
@@ -595,6 +611,7 @@ kbd {
   .info-card {
     width: min(100%, calc(100% - 10px));
     max-height: min(86vh, 760px);
+    min-height: min(76vh, 760px);
     padding: 16px;
   }
 
@@ -609,8 +626,6 @@ kbd {
   }
 
   .menu-actions.info-panel-actions {
-    position: sticky;
-    bottom: 0;
     padding-top: 8px;
     background: linear-gradient(180deg, rgba(43, 53, 56, 0), rgba(43, 53, 56, 0.96) 36%);
   }
