@@ -24,12 +24,13 @@ const DEFAULT_MOVING_PROFILE = {
 };
 
 export class Game {
-  constructor({ canvas, audio, ui }) {
+  constructor({ canvas, audio, ui, onGameOver = null }) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.audio = audio;
     this.ui = ui;
     this.state = GAME_STATES.MENU;
+    this.onGameOver = onGameOver;
     this.best = Number(localStorage.getItem(STORAGE_KEYS.bestScore) ?? 0);
     this.playerSprites = {};
     this.collisionSystem = new CollisionSystem();
@@ -103,6 +104,7 @@ export class Game {
     this.time = 0;
     this.cameraY = this.player.y - 3;
     this.shake = 0;
+    this.shakeTimer = 0;
     this.nextHazardId = 1;
     this.nextPlatformId = 1;
     this.nextCoinId = 1;
@@ -292,8 +294,8 @@ export class Game {
       );
       this.seedWaterLanePlatforms(lane);
     } else if (type === 'rail') {
-      lane.speed = randRange(5.1, 7.2) + this.score * 0.03;
-      lane.interval = randRange(4.9, 7.8);
+      lane.speed = randRange(GAME_CONFIG.railHazard.minSpeed, GAME_CONFIG.railHazard.maxSpeed) + this.score * GAME_CONFIG.railHazard.scoreScale;
+      lane.interval = randRange(GAME_CONFIG.railHazard.minInterval, GAME_CONFIG.railHazard.maxInterval);
       lane.warningLead = GAME_CONFIG.trainWarning.leadTime;
       lane.warningActive = false;
       lane.pendingSpawn = false;
@@ -450,6 +452,7 @@ export class Game {
     for (const hazard of this.hazards) {
       hazard.prevX = hazard.x;
       hazard.x += hazard.speed * hazard.dir * dt;
+      this.maybeTriggerTrainPassShake(hazard);
     }
     this.hazards = this.hazards.filter((h) => h.x > -5 && h.x < GAME_CONFIG.cols + 5);
 
@@ -466,7 +469,12 @@ export class Game {
 
     this.handleCollisions(dt);
     this.collectCoinAtPlayer();
-    this.shake *= GAME_CONFIG.screenShakeDecay;
+    if (this.shakeTimer > 0) {
+      this.shakeTimer = Math.max(0, this.shakeTimer - dt);
+      this.shake *= GAME_CONFIG.screenShakeDecay;
+    } else {
+      this.shake = 0;
+    }
   }
 
   updateRain(dt) {
@@ -618,9 +626,33 @@ export class Game {
     if (this.state !== GAME_STATES.PLAYING) return;
     this.state = GAME_STATES.GAME_OVER;
     this.audio.play('hit');
-    this.shake = GAME_CONFIG.screenShakeMax;
+    this.triggerScreenShake(GAME_CONFIG.effects.deathShake);
     this.spawnBurst('#c56f5c', 26);
-    this.ui.showGameOver(this.score, message);
+    this.onGameOver?.({ score: this.score, message });
+  }
+
+  maybeTriggerTrainPassShake(hazard) {
+    if (hazard.type !== 'maxTrain' || hazard.didShake) return;
+    if (Math.abs(hazard.y - this.player.y) > 6) return;
+
+    const profile = this.getMovingProfile(hazard.type);
+    const prevCenter = hazard.prevX + (profile.collision.offsetX ?? 0);
+    const currentCenter = hazard.x + (profile.collision.offsetX ?? 0);
+    const playerCenter = this.player.fx + 0.5;
+
+    const crossedPlayer =
+      (prevCenter <= playerCenter && currentCenter >= playerCenter) ||
+      (prevCenter >= playerCenter && currentCenter <= playerCenter);
+
+    if (!crossedPlayer) return;
+
+    hazard.didShake = true;
+    this.triggerScreenShake(GAME_CONFIG.effects.maxTrainPassShake);
+  }
+
+  triggerScreenShake({ intensity, duration }) {
+    this.shake = Math.max(this.shake, intensity);
+    this.shakeTimer = Math.max(this.shakeTimer, duration);
   }
 
   spawnHopParticles() {

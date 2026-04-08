@@ -3,11 +3,32 @@ import { InputManager } from './input.js';
 import { UIController } from './ui.js';
 import { AudioSystem } from './audio.js';
 import { GAME_STATES, STORAGE_KEYS } from './config.js';
+import { LeaderboardStore } from './leaderboard.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ui = new UIController();
 const audio = new AudioSystem(STORAGE_KEYS.muted);
-const game = new Game({ canvas, audio, ui });
+const leaderboard = new LeaderboardStore(STORAGE_KEYS.leaderboard);
+
+let lastGameOver = { score: 0, message: 'Run ended.' };
+let leaderboardReturnScreen = 'menu';
+let latestLeaderboardEntryId = null;
+
+const game = new Game({
+  canvas,
+  audio,
+  ui,
+  onGameOver: ({ score, message }) => {
+    lastGameOver = { score, message };
+    const qualifies = leaderboard.qualifies(score);
+    if (qualifies) {
+      ui.showInitialsEntry(score);
+    } else {
+      ui.showGameOver(score, message);
+      latestLeaderboardEntryId = null;
+    }
+  }
+});
 
 const muteBtn = document.getElementById('muteBtn');
 const infoBtn = document.getElementById('infoBtn');
@@ -18,6 +39,36 @@ const resumeBtn = document.getElementById('resumeBtn');
 const superJumpBtn = document.getElementById('superJumpBtn');
 
 let infoPausedRun = false;
+
+const openLeaderboard = (fromScreen) => {
+  leaderboardReturnScreen = fromScreen;
+  const entries = leaderboard.getEntries();
+  ui.renderLeaderboard(entries, latestLeaderboardEntryId);
+  ui.showLeaderboard();
+  audio.play('ui');
+};
+
+ui.setInitialsSubmitHandler((initials) => {
+  const result = leaderboard.addEntry(initials, lastGameOver.score);
+  latestLeaderboardEntryId = result.entry.id;
+  ui.renderLeaderboard(result.entries, latestLeaderboardEntryId);
+  ui.showLeaderboard();
+  audio.play('ui');
+});
+
+ui.setLeaderboardHandlers({
+  onOpenLeaderboard: (origin) => {
+    openLeaderboard(origin);
+  },
+  onCloseLeaderboard: () => {
+    if (leaderboardReturnScreen === 'game_over' || game.state === GAME_STATES.GAME_OVER) {
+      ui.showGameOver(lastGameOver.score, lastGameOver.message);
+    } else {
+      ui.showStart();
+    }
+    audio.play('ui');
+  }
+});
 
 const syncMuteButton = () => {
   muteBtn.textContent = audio.isMuted ? '🔇' : '🔊';
@@ -61,6 +112,7 @@ closeInfoBtn.addEventListener('click', () => {
 
 window.addEventListener('keydown', (event) => {
   if (event.code !== 'KeyI') return;
+  if (ui.isNameEntryActive()) return;
   event.preventDefault();
   const hidden = ui.infoScreen.classList.contains('hidden');
   setInfoOpen(hidden);
@@ -68,6 +120,7 @@ window.addEventListener('keydown', (event) => {
 
 const beginRun = () => {
   game.start();
+  latestLeaderboardEntryId = null;
   ui.hideAllOverlays();
   audio.play('ui');
 };
@@ -99,7 +152,8 @@ const input = new InputManager({
     game.togglePause();
     ui.showPause(game.state === GAME_STATES.PAUSED);
     audio.play('ui');
-  }
+  },
+  shouldCaptureKeyboard: () => ui.isNameEntryActive()
 });
 input.bind();
 

@@ -1,6 +1,7 @@
 export const STORAGE_KEYS = {
   bestScore: 'fig_game_best',
-  muted: 'fig_game_muted'
+  muted: 'fig_game_muted',
+  leaderboard: 'fig_game_leaderboard_v1'
 };
 
 export const GAME_STATES = {
@@ -10,20 +11,22 @@ export const GAME_STATES = {
   GAME_OVER: 'game_over'
 };
 
+export const LEADERBOARD_LIMIT = 10;
+
 export const ASSET_MANIFEST = {
   player: {
-    figForward: 'assets/player/figForward.svg',
-    figLeft: 'assets/player/figLeft.svg',
-    figRight: 'assets/player/figRight.svg',
+    figForward: 'assets/player/figForward.png',
+    figLeft: 'assets/player/figLeft.png',
+    figRight: 'assets/player/figRight.png',
     figBack: 'assets/player/figBack.svg'
   },
   vehicles: {
-    car1: 'assets/vehicles/car1.svg',
+    car1: 'assets/vehicles/car1.png',
     car2: 'assets/vehicles/car2.svg',
     car3: 'assets/vehicles/car3.svg',
     bike1: 'assets/vehicles/bike1.svg',
     scooter1: 'assets/vehicles/scooter1.svg',
-    maxTrain: 'assets/vehicles/maxTrain.svg'
+    maxTrain: 'assets/vehicles/maxTrain.png'
   },
   hazards: {
     log1: 'assets/hazards/log1.svg',
@@ -31,7 +34,7 @@ export const ASSET_MANIFEST = {
     kayak1: 'assets/hazards/kayak1.svg'
   },
   collectibles: {
-    coin: 'assets/collectibles/coin.svg'
+    coin: 'assets/collectibles/coin.png'
   },
   environment: {
     riverTile: 'assets/environment/riverTile.svg',
@@ -138,8 +141,7 @@ export const GAME_CONFIG = {
   difficultyRampEvery: 14,
   despawnMargin: 3,
   cameraLerp: 0.22,
-  screenShakeDecay: 0.88,
-  screenShakeMax: 11,
+  screenShakeDecay: 0.84,
   particleLifetime: 0.4,
   rainAmount: 90,
   debug: {
@@ -208,8 +210,25 @@ export const GAME_CONFIG = {
     { type: 'rail', weight: 1.25 }
   ],
   trainWarning: {
-    leadTime: 1.25,
+    leadTime: 1.5,
     flashHz: 4.5
+  },
+  railHazard: {
+    minSpeed: 6.375,
+    maxSpeed: 9.0,
+    scoreScale: 0.0375,
+    minInterval: 4.9,
+    maxInterval: 7.8
+  },
+  effects: {
+    maxTrainPassShake: {
+      intensity: 3.8,
+      duration: 0.18
+    },
+    deathShake: {
+      intensity: 10.5,
+      duration: 0.28
+    }
   },
   riverPlatforms: {
     hitboxPaddingX: 0.03,

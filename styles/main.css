@@ -338,6 +338,8 @@ button:focus-visible {
   margin-top: 14px;
   display: flex;
   justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 kbd {
@@ -475,4 +477,63 @@ kbd {
 .toggle-row input {
   width: 20px;
   height: 20px;
+}
+
+
+.initials-input {
+  text-transform: uppercase;
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.26em;
+  max-width: 190px;
+}
+
+.hint-text {
+  margin-top: 10px;
+  min-height: 1.2em;
+  font-size: 0.9rem;
+  color: #c6d4c9;
+}
+
+.leaderboard-rows {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(182, 194, 180, 0.3);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: rgba(56, 67, 70, 0.45);
+}
+
+.leaderboard-row.is-empty {
+  opacity: 0.58;
+}
+
+.leaderboard-row.is-new {
+  border-color: rgba(226, 201, 111, 0.9);
+  box-shadow: 0 0 0 1px rgba(226, 201, 111, 0.4), 0 8px 20px rgba(226, 201, 111, 0.18);
+}
+
+.leaderboard-rank {
+  color: #f1e7b6;
+  font-weight: 700;
+}
+
+.leaderboard-initials {
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-align: center;
+}
+
+.leaderboard-score {
+  font-weight: 700;
+  color: #dbe5de;
 }
