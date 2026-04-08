@@ -10,10 +10,14 @@ const audio = new AudioSystem(STORAGE_KEYS.muted);
 const game = new Game({ canvas, audio, ui });
 
 const muteBtn = document.getElementById('muteBtn');
+const infoBtn = document.getElementById('infoBtn');
+const closeInfoBtn = document.getElementById('closeInfoBtn');
 const startBtn = document.getElementById('startBtn');
 const restartBtn = document.getElementById('restartBtn');
 const resumeBtn = document.getElementById('resumeBtn');
 const superJumpBtn = document.getElementById('superJumpBtn');
+
+let infoPausedRun = false;
 
 const syncMuteButton = () => {
   muteBtn.textContent = audio.isMuted ? '🔇' : '🔊';
@@ -27,6 +31,37 @@ muteBtn.addEventListener('click', () => {
   syncMuteButton();
 });
 
+const setInfoOpen = (isOpen) => {
+  if (isOpen) {
+    if (game.state === GAME_STATES.PLAYING) {
+      game.setState(GAME_STATES.PAUSED);
+      infoPausedRun = true;
+    }
+    ui.showInfo(true);
+  } else {
+    ui.showInfo(false);
+    if (infoPausedRun && game.state === GAME_STATES.PAUSED) game.setState(GAME_STATES.PLAYING);
+    infoPausedRun = false;
+  }
+};
+
+infoBtn.addEventListener('click', () => {
+  setInfoOpen(true);
+  audio.play('ui');
+});
+
+closeInfoBtn.addEventListener('click', () => {
+  setInfoOpen(false);
+  audio.play('ui');
+});
+
+window.addEventListener('keydown', (event) => {
+  if (event.code !== 'KeyI') return;
+  event.preventDefault();
+  const hidden = ui.infoScreen.classList.contains('hidden');
+  setInfoOpen(hidden);
+});
+
 const beginRun = () => {
   game.start();
   ui.hideAllOverlays();
@@ -36,7 +71,7 @@ startBtn.addEventListener('click', beginRun);
 restartBtn.addEventListener('click', beginRun);
 
 resumeBtn.addEventListener('click', () => {
-  if (game.state !== GAME_STATES.PAUSED) return;
+  if (game.state !== GAME_STATES.PAUSED || ui.pauseScreen.classList.contains('hidden')) return;
   game.togglePause();
   ui.showPause(false);
   audio.play('ui');
@@ -51,8 +86,9 @@ const input = new InputManager({
   touchContainer: document.querySelector('.touch-controls'),
   onMove: (dir) => game.move(dir),
   onSuperJump: () => game.useSuperJump(),
+  onToggleDebug: () => game.toggleCollisionDebug(),
   onPause: () => {
-    if (game.state === GAME_STATES.MENU || game.state === GAME_STATES.GAME_OVER) return;
+    if (game.state === GAME_STATES.MENU || game.state === GAME_STATES.GAME_OVER || !ui.infoScreen.classList.contains('hidden')) return;
     game.togglePause();
     ui.showPause(game.state === GAME_STATES.PAUSED);
     audio.play('ui');
