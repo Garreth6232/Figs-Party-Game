@@ -195,6 +195,17 @@ export const ASSET_METADATA = [
     visibleInInfoMenu: false,
     visibleInDevAssetBrowser: true
   },
+
+  {
+    key: 'railTile',
+    path: 'assets/environment/railTile.jpg',
+    category: 'environment tiles',
+    label: 'Rail Tile',
+    description: 'Track lane tile texture used in all MAX rail rows.',
+    interactionType: 'avoid',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
   {
     key: 'sidewalkTile',
     path: 'assets/environment/SidewalkTile.jpg',
@@ -226,11 +237,11 @@ export const ASSET_METADATA = [
     visibleInDevAssetBrowser: true
   },
   {
-    key: 'foodCart1',
-    path: 'assets/environment/foodCart1.svg',
+    key: 'foodCart',
+    path: 'assets/environment/foodcart.png',
     category: 'props',
     label: 'Food Cart',
-    description: 'Decorative city food cart prop.',
+    description: 'Decorative city food cart prop rendered on road lanes.',
     interactionType: 'ignore',
     visibleInInfoMenu: false,
     visibleInDevAssetBrowser: true
@@ -269,7 +280,7 @@ export const ASSET_MANIFEST = {
   vehicles: buildAssetGroup(['car1', 'car2', 'car3', 'bike1', 'scooter1', 'maxTrain']),
   hazards: buildAssetGroup(['log1', 'raft1', 'kayak1']),
   collectibles: buildAssetGroup(['coin']),
-  environment: buildAssetGroup(['grassTile', 'riverTile', 'roadTile', 'sidewalkTile', 'bridgeTile', 'tree1', 'foodCart1']),
+  environment: buildAssetGroup(['grassTile', 'riverTile', 'roadTile', 'railTile', 'sidewalkTile', 'bridgeTile', 'tree1', 'foodCart']),
   ui: buildAssetGroup(['superJumpReady']),
   warnings: buildAssetGroup(['trainWarning']),
   audio: {
@@ -381,16 +392,16 @@ export const GAME_CONFIG = {
     player: {
       offsetX: 0,
       offsetY: 0.01,
-      scaleX: 0.96,
-      scaleY: 0.96,
+      scaleX: 1.06,
+      scaleY: 1.06,
       anchor: 'center',
       crop: { left: 0.03, right: 0.03, top: 0.05, bottom: 0.04 }
     },
     coin: {
       offsetX: 0,
       offsetY: 0,
-      scaleX: 0.92,
-      scaleY: 0.92,
+      scaleX: 0.95,
+      scaleY: 0.95,
       anchor: 'center',
       crop: { left: 0.02, right: 0.02, top: 0.02, bottom: 0.02 }
     }
@@ -403,7 +414,19 @@ export const GAME_CONFIG = {
   },
   environmentTiles: {
     baseWorldUnits: { width: 1, height: 1 },
-    roadShoulderHeightRatio: 0.14
+    roadShoulderHeightRatio: 0.14,
+    snapToPixels: true,
+    overlapPx: 1
+  },
+  coinVisuals: {
+    bobAmplitudeRatio: 0.05,
+    bobFrequencyHz: 5.2,
+    glowAlpha: 0.2,
+    glowRadiusRatio: 0.22,
+    shadowAlpha: 0.22,
+    shadowOffsetRatio: 0.12,
+    rimAlpha: 0.32,
+    rimWidthPx: 2
   },
   laneWeights: [
     { type: 'grass', weight: 2.2 },
@@ -412,13 +435,13 @@ export const GAME_CONFIG = {
     { type: 'rail', weight: 1.25 }
   ],
   trainWarning: {
-    leadTime: 1.5,
+    leadTime: 1.8,
     flashHz: 4.5
   },
   railHazard: {
-    minSpeed: 6.375,
-    maxSpeed: 9.0,
-    scoreScale: 0.0375,
+    minSpeed: 9.5625,
+    maxSpeed: 13.5,
+    scoreScale: 0.05625,
     minInterval: 4.9,
     maxInterval: 7.8
   },

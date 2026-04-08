@@ -26,10 +26,11 @@
     "grassTile": "assets/environment/grassTile.jpg",
     "riverTile": "assets/environment/riverTile.png",
     "roadTile": "assets/environment/roadTile.jpg",
+    "railTile": "assets/environment/railTile.jpg",
     "sidewalkTile": "assets/environment/SidewalkTile.jpg",
     "bridgeTile": "assets/environment/bridgeTile.svg",
     "tree1": "assets/environment/tree1.png",
-    "foodCart1": "assets/environment/foodCart1.svg"
+    "foodCart": "assets/environment/foodcart.png"
   },
   "ui": {
     "superJumpReady": "assets/ui/superJumpReady.svg"
