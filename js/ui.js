@@ -1,4 +1,4 @@
-import { ASSET_GUIDE, GAME_CONFIG, LEADERBOARD_LIMIT } from './config.js';
+import { ASSET_GUIDE, DEV_ASSET_BROWSER_ITEMS, GAME_CONFIG, LEADERBOARD_LIMIT } from './config.js';
 import { normalizeInitialsInput } from './leaderboard.js';
 
 export class UIController {
@@ -25,6 +25,7 @@ export class UIController {
     this.debugPanel = document.getElementById('debugPanel');
     this.infoList = document.getElementById('infoList');
     this.messageEl = document.getElementById('gameOverMessage');
+    this.debugAssetBrowser = document.getElementById('debugAssetBrowser');
 
     this.startBtn = document.getElementById('startBtn');
     this.resumeBtn = document.getElementById('resumeBtn');
@@ -65,6 +66,7 @@ export class UIController {
     this.debugUnlocked = false;
 
     this.renderAssetGuide();
+    this.renderDebugAssetBrowser();
     this.bindDebugControls();
     this.bindLeaderboardControls();
     this.bindInitialsControls();
@@ -191,6 +193,47 @@ export class UIController {
         </div>
       `;
       this.infoList.append(row);
+    }
+  }
+
+  renderDebugAssetBrowser() {
+    if (!this.debugAssetBrowser) return;
+    this.debugAssetBrowser.innerHTML = '';
+
+    const grouped = DEV_ASSET_BROWSER_ITEMS.reduce((acc, item) => {
+      if (!acc[item.category]) acc[item.category] = [];
+      acc[item.category].push(item);
+      return acc;
+    }, {});
+
+    for (const [category, items] of Object.entries(grouped)) {
+      const section = document.createElement('section');
+      section.className = 'dev-asset-category';
+      section.innerHTML = `<h4>${category}</h4>`;
+
+      const list = document.createElement('div');
+      list.className = 'dev-asset-list';
+
+      for (const item of items) {
+        const card = document.createElement('article');
+        card.className = 'dev-asset-item';
+        const canPreview = item.path.startsWith('assets/');
+        card.innerHTML = `
+          <div class="dev-asset-preview">
+            ${canPreview ? `<img src="${item.path}" alt="${item.label} preview" loading="lazy" />` : '<span class="dev-asset-preview-fallback">n/a</span>'}
+          </div>
+          <div>
+            <h5>${item.label} <span class="badge badge-${item.interactionType}">${item.interactionType}</span></h5>
+            <p><strong>Key:</strong> ${item.key}</p>
+            <p><strong>Path:</strong> ${item.path}</p>
+            <p>${item.description}</p>
+          </div>
+        `;
+        list.append(card);
+      }
+
+      section.append(list);
+      this.debugAssetBrowser.append(section);
     }
   }
 

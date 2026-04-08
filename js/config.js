@@ -13,40 +13,254 @@ export const GAME_STATES = {
 
 export const LEADERBOARD_LIMIT = 10;
 
+export const ASSET_METADATA = [
+  {
+    key: 'figForward',
+    path: 'assets/player/figForward.png',
+    category: 'player sprites',
+    label: 'Fig (Forward)',
+    description: 'Default forward-facing player sprite for downward movement.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'figLeft',
+    path: 'assets/player/figLeft.png',
+    category: 'player sprites',
+    label: 'Fig (Left)',
+    description: 'Player sprite used while moving left.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'figRight',
+    path: 'assets/player/figRight.png',
+    category: 'player sprites',
+    label: 'Fig (Right)',
+    description: 'Player sprite used while moving right.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'figBack',
+    path: 'assets/player/figBack.png',
+    category: 'player sprites',
+    label: 'Fig (Back)',
+    description: 'Player sprite used while moving up/lane-forward.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'figSJ',
+    path: 'assets/player/figSJ.png',
+    category: 'super jump sprite',
+    label: 'Fig (Super Jump)',
+    description: 'Temporary player visual shown while super jump is active.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'car1',
+    path: 'assets/vehicles/car1.png',
+    category: 'vehicles',
+    label: 'Car 1',
+    description: 'Standard road car hazard.',
+    interactionType: 'avoid',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'car2',
+    path: 'assets/vehicles/car2.svg',
+    category: 'vehicles',
+    label: 'Car 2',
+    description: 'Wider road car hazard variant.',
+    interactionType: 'avoid',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'car3',
+    path: 'assets/vehicles/car3.svg',
+    category: 'vehicles',
+    label: 'Car 3',
+    description: 'Road car hazard with alternate look.',
+    interactionType: 'avoid',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'bike1',
+    path: 'assets/vehicles/bike1.svg',
+    category: 'vehicles',
+    label: 'Bike',
+    description: 'Bike hazard in road lanes.',
+    interactionType: 'avoid',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'scooter1',
+    path: 'assets/vehicles/scooter1.svg',
+    category: 'vehicles',
+    label: 'Scooter',
+    description: 'Scooter hazard in road lanes.',
+    interactionType: 'avoid',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'maxTrain',
+    path: 'assets/vehicles/maxTrain.png',
+    category: 'MAX train',
+    label: 'MAX Train',
+    description: 'Fast rail hazard that ends runs on contact.',
+    interactionType: 'avoid',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'log1',
+    path: 'assets/hazards/log1.svg',
+    category: 'river platforms',
+    label: 'Log',
+    description: 'Floating river platform that can carry the player.',
+    interactionType: 'ride',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'raft1',
+    path: 'assets/hazards/raft1.svg',
+    category: 'river platforms',
+    label: 'Raft',
+    description: 'Stable floating platform for crossing water lanes.',
+    interactionType: 'ride',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'kayak1',
+    path: 'assets/hazards/kayak1.svg',
+    category: 'river platforms',
+    label: 'Kayak',
+    description: 'Narrow floating platform that still supports river traversal.',
+    interactionType: 'ride',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'coin',
+    path: 'assets/collectibles/coin.png',
+    category: 'collectibles',
+    label: 'Coin',
+    description: 'Collectible that charges super jump energy.',
+    interactionType: 'collect',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'riverTile',
+    path: 'assets/environment/riverTile.png',
+    category: 'environment tiles',
+    label: 'River Tile',
+    description: 'Water lane tile texture used in all river rows.',
+    interactionType: 'avoid',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'roadTile',
+    path: 'assets/environment/roadTile.svg',
+    category: 'environment tiles',
+    label: 'Road Tile',
+    description: 'Road lane base tile texture.',
+    interactionType: 'avoid',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'sidewalkTile',
+    path: 'assets/environment/sidewalkTile.svg',
+    category: 'environment tiles',
+    label: 'Sidewalk Tile',
+    description: 'Optional decorative sidewalk tile.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'bridgeTile',
+    path: 'assets/environment/bridgeTile.svg',
+    category: 'environment tiles',
+    label: 'Bridge Tile',
+    description: 'Bridge texture for optional themed lanes.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'tree1',
+    path: 'assets/environment/tree1.png',
+    category: 'props',
+    label: 'Tree',
+    description: 'Decorative tree prop rendered on grass lanes.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'foodCart1',
+    path: 'assets/environment/foodCart1.svg',
+    category: 'props',
+    label: 'Food Cart',
+    description: 'Decorative Portland food cart prop.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'superJumpReady',
+    path: 'assets/ui/superJumpReady.svg',
+    category: 'UI assets',
+    label: 'Super Jump Ready Indicator',
+    description: 'UI indicator asset used for super jump readiness styling.',
+    interactionType: 'internal',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'trainWarning',
+    path: '(canvas-generated)',
+    category: 'warning indicators',
+    label: 'Train Warning Flash',
+    description: 'Canvas-generated lane warning shown before train spawn.',
+    interactionType: 'internal',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  }
+];
+
+const buildAssetGroup = (keys) =>
+  keys.reduce((group, key) => {
+    const asset = ASSET_METADATA.find((entry) => entry.key === key);
+    if (asset) group[key] = asset.path;
+    return group;
+  }, {});
+
 export const ASSET_MANIFEST = {
-  player: {
-    figForward: 'assets/player/figForward.png',
-    figLeft: 'assets/player/figLeft.png',
-    figRight: 'assets/player/figRight.png',
-    figBack: 'assets/player/figBack.svg'
-  },
-  vehicles: {
-    car1: 'assets/vehicles/car1.png',
-    car2: 'assets/vehicles/car2.svg',
-    car3: 'assets/vehicles/car3.svg',
-    bike1: 'assets/vehicles/bike1.svg',
-    scooter1: 'assets/vehicles/scooter1.svg',
-    maxTrain: 'assets/vehicles/maxTrain.png'
-  },
-  hazards: {
-    log1: 'assets/hazards/log1.svg',
-    raft1: 'assets/hazards/raft1.svg',
-    kayak1: 'assets/hazards/kayak1.svg'
-  },
-  collectibles: {
-    coin: 'assets/collectibles/coin.png'
-  },
-  environment: {
-    riverTile: 'assets/environment/riverTile.svg',
-    roadTile: 'assets/environment/roadTile.svg',
-    sidewalkTile: 'assets/environment/sidewalkTile.svg',
-    bridgeTile: 'assets/environment/bridgeTile.svg',
-    tree1: 'assets/environment/tree1.svg',
-    foodCart1: 'assets/environment/foodCart1.svg'
-  },
-  ui: {
-    superJumpReady: 'assets/ui/superJumpReady.svg'
-  },
+  player: buildAssetGroup(['figForward', 'figLeft', 'figRight', 'figBack', 'figSJ']),
+  vehicles: buildAssetGroup(['car1', 'car2', 'car3', 'bike1', 'scooter1', 'maxTrain']),
+  hazards: buildAssetGroup(['log1', 'raft1', 'kayak1']),
+  collectibles: buildAssetGroup(['coin']),
+  environment: buildAssetGroup(['riverTile', 'roadTile', 'sidewalkTile', 'bridgeTile', 'tree1', 'foodCart1']),
+  ui: buildAssetGroup(['superJumpReady']),
+  warnings: buildAssetGroup(['trainWarning']),
   audio: {
     hop: 'assets/audio/hop.wav',
     hit: 'assets/audio/hit.wav',
@@ -55,78 +269,15 @@ export const ASSET_MANIFEST = {
   }
 };
 
-export const ASSET_GUIDE = [
-  {
-    id: 'maxTrain',
-    name: 'MAX Train',
-    preview: ASSET_MANIFEST.vehicles.maxTrain,
-    action: 'avoid',
-    description: 'A fast train hazard that can instantly end your run, so avoid it.'
-  },
-  {
-    id: 'car1',
-    name: 'Car 1',
-    preview: ASSET_MANIFEST.vehicles.car1,
-    action: 'avoid',
-    description: 'Standard road traffic that should always be avoided.'
-  },
-  {
-    id: 'car2',
-    name: 'Car 2',
-    preview: ASSET_MANIFEST.vehicles.car2,
-    action: 'avoid',
-    description: 'A slightly wider road car that should always be avoided.'
-  },
-  {
-    id: 'coin',
-    name: 'Coin',
-    preview: ASSET_MANIFEST.collectibles.coin,
-    action: 'collect',
-    description: 'A collectible item that helps charge your super jump, so collect it.'
-  },
-  {
-    id: 'raft1',
-    name: 'Raft',
-    preview: ASSET_MANIFEST.hazards.raft1,
-    action: 'ride',
-    description: 'A floating platform that helps you cross river lanes safely, so use it.'
-  },
-  {
-    id: 'riverTile',
-    name: 'River Tile',
-    preview: ASSET_MANIFEST.environment.riverTile,
-    action: 'avoid',
-    description: 'Dangerous water that should be avoided unless you are on a valid platform.'
-  },
-  {
-    id: 'figForward',
-    name: 'figForward',
-    preview: ASSET_MANIFEST.player.figForward,
-    action: 'ignore',
-    description: 'The forward-facing fig sprite is informational only for your current direction.'
-  },
-  {
-    id: 'figLeft',
-    name: 'figLeft',
-    preview: ASSET_MANIFEST.player.figLeft,
-    action: 'ignore',
-    description: 'The left-facing fig sprite is informational only for your current direction.'
-  },
-  {
-    id: 'figRight',
-    name: 'figRight',
-    preview: ASSET_MANIFEST.player.figRight,
-    action: 'ignore',
-    description: 'The right-facing fig sprite is informational only for your current direction.'
-  },
-  {
-    id: 'figBack',
-    name: 'figBack',
-    preview: ASSET_MANIFEST.player.figBack,
-    action: 'ignore',
-    description: 'The back-facing fig sprite is informational only for your current direction.'
-  }
-];
+export const ASSET_GUIDE = ASSET_METADATA.filter((item) => item.visibleInInfoMenu).map((item) => ({
+  id: item.key,
+  name: item.label,
+  preview: item.path,
+  action: item.interactionType,
+  description: item.description
+}));
+
+export const DEV_ASSET_BROWSER_ITEMS = ASSET_METADATA.filter((item) => item.visibleInDevAssetBrowser);
 
 export const GAME_CONFIG = {
   cols: 9,
@@ -274,5 +425,8 @@ export const GAME_CONFIG = {
     spawnAheadMax: 15,
     coinsNeededForSuperJump: 10,
     superJumpDistance: 20
+  },
+  superJump: {
+    spriteDuration: 0.38
   }
 };
