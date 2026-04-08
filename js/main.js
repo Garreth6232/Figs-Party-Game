@@ -13,6 +13,7 @@ const leaderboard = new LeaderboardStore(STORAGE_KEYS.leaderboard);
 let lastGameOver = { score: 0, message: 'Run ended.' };
 let leaderboardReturnScreen = 'menu';
 let latestLeaderboardEntryId = null;
+let pendingLeaderboardEntry = false;
 
 const game = new Game({
   canvas,
@@ -20,13 +21,9 @@ const game = new Game({
   ui,
   onGameOver: ({ score, message }) => {
     lastGameOver = { score, message };
-    const qualifies = leaderboard.qualifies(score);
-    if (qualifies) {
-      ui.showInitialsEntry(score);
-    } else {
-      ui.showGameOver(score, message);
-      latestLeaderboardEntryId = null;
-    }
+    pendingLeaderboardEntry = leaderboard.qualifies(score);
+    ui.showGameOver(score, message, { canEnterName: pendingLeaderboardEntry });
+    if (!pendingLeaderboardEntry) latestLeaderboardEntryId = null;
   }
 });
 
@@ -51,9 +48,23 @@ const openLeaderboard = (fromScreen) => {
 ui.setInitialsSubmitHandler((initials) => {
   const result = leaderboard.addEntry(initials, lastGameOver.score);
   latestLeaderboardEntryId = result.entry.id;
+  pendingLeaderboardEntry = false;
   ui.renderLeaderboard(result.entries, latestLeaderboardEntryId);
   ui.showLeaderboard();
   audio.play('ui');
+});
+
+ui.setInitialsSkipHandler(() => {
+  pendingLeaderboardEntry = false;
+  beginRun();
+});
+
+ui.setGameOverHandlers({
+  onEnterName: () => {
+    if (!pendingLeaderboardEntry) return;
+    ui.showInitialsEntry(lastGameOver.score);
+    audio.play('ui');
+  }
 });
 
 ui.setLeaderboardHandlers({
@@ -62,7 +73,7 @@ ui.setLeaderboardHandlers({
   },
   onCloseLeaderboard: () => {
     if (leaderboardReturnScreen === 'game_over' || game.state === GAME_STATES.GAME_OVER) {
-      ui.showGameOver(lastGameOver.score, lastGameOver.message);
+      ui.showGameOver(lastGameOver.score, lastGameOver.message, { canEnterName: pendingLeaderboardEntry });
     } else {
       ui.showStart();
     }
@@ -120,6 +131,7 @@ window.addEventListener('keydown', (event) => {
 
 const beginRun = () => {
   game.start();
+  pendingLeaderboardEntry = false;
   latestLeaderboardEntryId = null;
   ui.hideAllOverlays();
   audio.play('ui');

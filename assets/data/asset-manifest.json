@@ -8,10 +8,10 @@
   },
   "vehicles": {
     "car1": "assets/vehicles/car1.png",
-    "car2": "assets/vehicles/car2.svg",
-    "car3": "assets/vehicles/car3.svg",
-    "bike1": "assets/vehicles/bike1.svg",
-    "scooter1": "assets/vehicles/scooter1.svg",
+    "car2": "assets/vehicles/car1.png",
+    "car3": "assets/vehicles/car1.png",
+    "bike1": "assets/vehicles/car1.png",
+    "scooter1": "assets/vehicles/car1.png",
     "maxTrain": "assets/vehicles/maxTrain.png"
   },
   "hazards": {

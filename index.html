@@ -82,11 +82,13 @@
 
         <section id="infoScreen" class="overlay hidden" aria-labelledby="infoTitle" aria-hidden="true">
           <div class="card info-card" role="dialog" aria-modal="true">
-            <div id="infoMainPanel">
-              <h2 id="infoTitle">Asset Guide</h2>
-              <p>Review each core asset and whether you should avoid, collect, ride, or ignore it.</p>
+            <div id="infoMainPanel" class="info-panel info-panel-main">
+              <div class="info-panel-header">
+                <h2 id="infoTitle">Asset Guide</h2>
+                <p>Review each core asset and whether you should avoid, collect, ride, or ignore it.</p>
+              </div>
               <div id="infoList" class="info-list" aria-label="Asset explanations"></div>
-              <div class="menu-actions">
+              <div class="menu-actions info-panel-actions">
                 <button id="debugBtn" class="secondary small" type="button">Debug</button>
                 <button id="closeInfoBtn" class="primary" type="button">Close</button>
               </div>
@@ -105,18 +107,22 @@
             </div>
 
             <div id="debugPanel" class="info-panel hidden" aria-label="Debug tools">
-              <h2>Debug</h2>
-              <p>Diagnostics controls for game systems.</p>
-              <label class="toggle-row" for="debugHitboxesToggle">
-                <span>Hitboxes</span>
-                <input id="debugHitboxesToggle" type="checkbox" />
-              </label>
-              <section class="dev-assets-wrap" aria-label="Comprehensive asset browser">
-                <h3>Comprehensive Asset Browser</h3>
-                <p class="dev-note">Includes all game/runtime assets and internal indicators for auditing.</p>
-                <div id="debugAssetBrowser" class="dev-asset-browser"></div>
-              </section>
-              <div class="menu-actions">
+              <div class="info-panel-header">
+                <h2>Debug</h2>
+                <p>Diagnostics controls for game systems.</p>
+              </div>
+              <div class="info-panel-scroll">
+                <label class="toggle-row" for="debugHitboxesToggle">
+                  <span>Hitboxes</span>
+                  <input id="debugHitboxesToggle" type="checkbox" />
+                </label>
+                <section class="dev-assets-wrap" aria-label="Comprehensive asset browser">
+                  <h3>Comprehensive Asset Browser</h3>
+                  <p class="dev-note">Includes all game/runtime assets and internal indicators for auditing.</p>
+                  <div id="debugAssetBrowser" class="dev-asset-browser"></div>
+                </section>
+              </div>
+              <div class="menu-actions info-panel-actions">
                 <button id="debugBackBtn" class="secondary" type="button">Back to Info</button>
               </div>
             </div>
@@ -128,6 +134,7 @@
             <h2 id="gameOverTitle">Run Over</h2>
             <p id="gameOverMessage">You reached lane 0.</p>
             <div class="menu-actions">
+              <button id="enterNameBtn" class="secondary hidden" type="button">Enter Name</button>
               <button id="restartBtn" class="primary" type="button">Play Again</button>
               <button id="gameOverLeaderboardBtn" class="secondary" type="button">Leaderboard</button>
             </div>
@@ -152,6 +159,7 @@
             />
             <p id="initialsHint" class="hint-text">Enter your 3-letter arcade initials.</p>
             <div class="menu-actions">
+              <button id="initialsSkipBtn" class="secondary" type="button">New Game</button>
               <button id="initialsSaveBtn" class="primary" type="button" disabled>Save Score</button>
             </div>
           </div>

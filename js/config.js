@@ -12,6 +12,7 @@ export const GAME_STATES = {
 };
 
 export const LEADERBOARD_LIMIT = 10;
+export const STANDARD_ROAD_VEHICLE_KEYS = ['car1', 'car2', 'car3', 'bike1', 'scooter1'];
 
 export const ASSET_METADATA = [
   {
@@ -76,40 +77,40 @@ export const ASSET_METADATA = [
   },
   {
     key: 'car2',
-    path: 'assets/vehicles/car2.svg',
+    path: 'assets/vehicles/car1.png',
     category: 'vehicles',
-    label: 'Car 2',
-    description: 'Wider road car hazard variant.',
+    label: 'Car 2 (car1 visual)',
+    description: 'Standard road hazard variant using the shared car1 sprite.',
     interactionType: 'avoid',
     visibleInInfoMenu: true,
     visibleInDevAssetBrowser: true
   },
   {
     key: 'car3',
-    path: 'assets/vehicles/car3.svg',
+    path: 'assets/vehicles/car1.png',
     category: 'vehicles',
-    label: 'Car 3',
-    description: 'Road car hazard with alternate look.',
+    label: 'Car 3 (car1 visual)',
+    description: 'Standard road hazard variant using the shared car1 sprite.',
     interactionType: 'avoid',
     visibleInInfoMenu: false,
     visibleInDevAssetBrowser: true
   },
   {
     key: 'bike1',
-    path: 'assets/vehicles/bike1.svg',
+    path: 'assets/vehicles/car1.png',
     category: 'vehicles',
-    label: 'Bike',
-    description: 'Bike hazard in road lanes.',
+    label: 'Bike (car1 visual)',
+    description: 'Road hazard profile with bike tuning and shared car1 sprite.',
     interactionType: 'avoid',
     visibleInInfoMenu: false,
     visibleInDevAssetBrowser: true
   },
   {
     key: 'scooter1',
-    path: 'assets/vehicles/scooter1.svg',
+    path: 'assets/vehicles/car1.png',
     category: 'vehicles',
-    label: 'Scooter',
-    description: 'Scooter hazard in road lanes.',
+    label: 'Scooter (car1 visual)',
+    description: 'Road hazard profile with scooter tuning and shared car1 sprite.',
     interactionType: 'avoid',
     visibleInInfoMenu: false,
     visibleInDevAssetBrowser: true
@@ -269,6 +270,8 @@ export const ASSET_MANIFEST = {
   }
 };
 
+export const STANDARD_ROAD_VEHICLE_ASSET_KEY = 'car1';
+
 export const ASSET_GUIDE = ASSET_METADATA.filter((item) => item.visibleInInfoMenu).map((item) => ({
   id: item.key,
   name: item.label,
@@ -346,6 +349,40 @@ export const GAME_CONFIG = {
         render: { width: 0.95, height: 0.42, offsetX: 0, offsetY: -0.02 },
         collision: { type: 'platform', width: 0.78, height: 0.25, offsetX: 0, offsetY: 0.02 }
       }
+    }
+  },
+  renderProfiles: {
+    car1: {
+      offsetX: 0,
+      offsetY: 0,
+      scaleX: 0.96,
+      scaleY: 0.86,
+      anchor: 'center',
+      crop: { left: 0.04, right: 0.04, top: 0.12, bottom: 0.08 }
+    },
+    maxTrain: {
+      offsetX: 0,
+      offsetY: 0.02,
+      scaleX: 0.98,
+      scaleY: 0.88,
+      anchor: 'center',
+      crop: { left: 0.01, right: 0.01, top: 0.08, bottom: 0.08 }
+    },
+    player: {
+      offsetX: 0,
+      offsetY: 0.01,
+      scaleX: 0.96,
+      scaleY: 0.96,
+      anchor: 'center',
+      crop: { left: 0.03, right: 0.03, top: 0.05, bottom: 0.04 }
+    },
+    coin: {
+      offsetX: 0,
+      offsetY: 0,
+      scaleX: 0.92,
+      scaleY: 0.92,
+      anchor: 'center',
+      crop: { left: 0.02, right: 0.02, top: 0.02, bottom: 0.02 }
     }
   },
   lanePalette: {
