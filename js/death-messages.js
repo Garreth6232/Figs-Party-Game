@@ -90,9 +90,12 @@ export const DEATH_CAUSES = Object.freeze({
 });
 
 export function getDeathMessage(cause = DEATH_CAUSES.GENERIC) {
-  const pool = DEATH_MESSAGE_POOLS[cause] ?? DEATH_MESSAGE_POOLS.generic;
+  const genericPool = Array.isArray(DEATH_MESSAGE_POOLS.generic) ? DEATH_MESSAGE_POOLS.generic : ['Run ended.'];
+  const poolCandidate = DEATH_MESSAGE_POOLS?.[cause];
+  const pool = Array.isArray(poolCandidate) && poolCandidate.length > 0 ? poolCandidate : genericPool;
+  if (!Array.isArray(pool) || pool.length < 1) return 'Run ended.';
   const roll = Math.floor(Math.random() * pool.length);
-  return pool[roll];
+  return pool[roll] ?? pool[0] ?? 'Run ended.';
 }
 
 export { DEATH_MESSAGE_POOLS };
