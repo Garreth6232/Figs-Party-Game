@@ -1,8 +1,8 @@
 import { Game } from './game.js';
-import { InputManager } from './input.js';
+import { InputManager, InputSequenceDetector } from './input.js';
 import { UIController } from './ui.js';
 import { AudioSystem } from './audio.js';
-import { GAME_STATES, STORAGE_KEYS } from './config.js';
+import { GAME_CONFIG, GAME_STATES, STORAGE_KEYS } from './config.js';
 import { LeaderboardStore } from './leaderboard.js';
 
 const canvas = document.getElementById('gameCanvas');
@@ -167,6 +167,12 @@ resumeBtn.addEventListener('click', () => {
 const input = new InputManager({
   canvas,
   touchContainer: document.querySelector('.touch-controls'),
+  sequenceBindings: [
+    {
+      detector: new InputSequenceDetector(GAME_CONFIG.cheats.keyboardSequence, () => game.activateCheatCoins()),
+      shouldListen: () => game.state === GAME_STATES.PLAYING
+    }
+  ],
   onMove: (dir) => game.move(dir),
   onSuperJump: () => game.useSuperJump(),
   onToggleDebug: () => {

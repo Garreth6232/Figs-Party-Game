@@ -14,6 +14,31 @@ export const GAME_STATES = {
 export const LEADERBOARD_LIMIT = 10;
 export const STANDARD_ROAD_VEHICLE_KEYS = ['car1', 'car2', 'car3', 'bike1', 'scooter1'];
 
+const MOVING_ENTITY_TUNING = Object.freeze({
+  trainRenderScale: 1.5,
+  trainHitboxWidthMultiplier: 1.25,
+  carRenderScale: 1.25,
+  carHitboxScale: 1.1
+});
+
+const scaleRenderProfile = (profile, scale) => ({
+  ...profile,
+  render: {
+    ...profile.render,
+    width: profile.render.width * scale,
+    height: profile.render.height * scale
+  }
+});
+
+const scaleCollisionProfile = (profile, scale) => ({
+  ...profile,
+  collision: {
+    ...profile.collision,
+    width: profile.collision.width * scale,
+    height: profile.collision.height * scale
+  }
+});
+
 export const ASSET_METADATA = [
   {
     key: 'figForward',
@@ -586,5 +611,34 @@ export const GAME_CONFIG = {
       ringCount: 2,
       trailCount: 4
     }
+  },
+  cheats: {
+    rewardCoins: 1000,
+    keyboardSequence: ['up', 'down', 'up', 'down', 'left', 'right', 'up']
+  },
+  tuning: {
+    movingEntities: MOVING_ENTITY_TUNING
+  }
+};
+
+GAME_CONFIG.movingEntities.profiles.car1 = scaleCollisionProfile(
+  scaleRenderProfile(GAME_CONFIG.movingEntities.profiles.car1, MOVING_ENTITY_TUNING.carRenderScale),
+  MOVING_ENTITY_TUNING.carHitboxScale
+);
+GAME_CONFIG.movingEntities.profiles.car2 = scaleCollisionProfile(
+  scaleRenderProfile(GAME_CONFIG.movingEntities.profiles.car2, MOVING_ENTITY_TUNING.carRenderScale),
+  MOVING_ENTITY_TUNING.carHitboxScale
+);
+GAME_CONFIG.movingEntities.profiles.car3 = scaleCollisionProfile(
+  scaleRenderProfile(GAME_CONFIG.movingEntities.profiles.car3, MOVING_ENTITY_TUNING.carRenderScale),
+  MOVING_ENTITY_TUNING.carHitboxScale
+);
+
+GAME_CONFIG.movingEntities.profiles.maxTrain = {
+  ...scaleRenderProfile(GAME_CONFIG.movingEntities.profiles.maxTrain, MOVING_ENTITY_TUNING.trainRenderScale),
+  collision: {
+    ...GAME_CONFIG.movingEntities.profiles.maxTrain.collision,
+    width: GAME_CONFIG.movingEntities.profiles.maxTrain.collision.width * MOVING_ENTITY_TUNING.trainHitboxWidthMultiplier,
+    height: GAME_CONFIG.movingEntities.profiles.maxTrain.collision.height
   }
 };
