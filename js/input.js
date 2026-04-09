@@ -9,8 +9,45 @@ const KEY_TO_DIR = {
   KeyD: 'right'
 };
 
+export class InputSequenceDetector {
+  constructor(sequence, onMatch) {
+    this.sequence = Array.isArray(sequence) ? sequence : [];
+    this.onMatch = onMatch;
+    this.progress = 0;
+  }
+
+  reset() {
+    this.progress = 0;
+  }
+
+  push(token) {
+    if (!this.sequence.length) return;
+
+    if (token === this.sequence[this.progress]) {
+      this.progress += 1;
+      if (this.progress === this.sequence.length) {
+        this.progress = 0;
+        this.onMatch?.();
+      }
+      return;
+    }
+
+    this.progress = token === this.sequence[0] ? 1 : 0;
+  }
+}
+
 export class InputManager {
-  constructor({ canvas, touchContainer, onMove, onPause, onSuperJump, onToggleDebug, onToggleTerrainDebug, shouldCaptureKeyboard }) {
+  constructor({
+    canvas,
+    touchContainer,
+    onMove,
+    onPause,
+    onSuperJump,
+    onToggleDebug,
+    onToggleTerrainDebug,
+    shouldCaptureKeyboard,
+    sequenceBindings = []
+  }) {
     this.canvas = canvas;
     this.touchContainer = touchContainer;
     this.onMove = onMove;
@@ -22,12 +59,21 @@ export class InputManager {
     this.swipeStart = null;
     this.holdInterval = null;
     this.holdDir = null;
+    this.sequenceBindings = sequenceBindings;
   }
 
   bind() {
     window.addEventListener('keydown', (event) => {
       if (event.repeat) return;
       if (this.shouldCaptureKeyboard?.()) return;
+      const dir = KEY_TO_DIR[event.code];
+
+      this.sequenceBindings.forEach((binding) => {
+        if (binding.shouldListen?.() === false) return;
+        if (dir) binding.detector.push(dir);
+        else binding.detector.reset();
+      });
+
       if (event.code === 'KeyP' || event.code === 'Escape') {
         this.onPause();
         return;
@@ -45,7 +91,6 @@ export class InputManager {
         this.onSuperJump();
         return;
       }
-      const dir = KEY_TO_DIR[event.code];
       if (dir) {
         event.preventDefault();
         this.onMove(dir);

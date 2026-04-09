@@ -591,19 +591,36 @@ export class Game {
     if (coinIndex < 0) return;
 
     this.coins.splice(coinIndex, 1);
-    this.coinCount += 1;
-    this.ui.updateCoins(this.coinCount, GAME_CONFIG.coins.coinsNeededForSuperJump);
+    const reward = this.addCoins(1);
     this.audio.play('coin');
     this.spawnBurst('#e1bf63', 14);
 
-    if (this.coinCount >= GAME_CONFIG.coins.coinsNeededForSuperJump) {
-      this.coinCount -= GAME_CONFIG.coins.coinsNeededForSuperJump;
-      this.superJumps += 1;
-      this.ui.updateCoins(this.coinCount, GAME_CONFIG.coins.coinsNeededForSuperJump);
-      this.ui.updateSuperJumps(this.superJumps);
+    if (reward.superJumpsGranted > 0) {
       this.ui.showToast('Super Jump Charged! Press J', 'success');
       this.audio.play('super_ready');
     }
+  }
+
+  addCoins(amount) {
+    const grant = Math.max(0, Math.floor(Number(amount) || 0));
+    if (grant <= 0) return { grantedCoins: 0, superJumpsGranted: 0 };
+
+    const needed = GAME_CONFIG.coins.coinsNeededForSuperJump;
+    const coinPool = this.coinCount + grant;
+    const superJumpsGranted = Math.floor(coinPool / needed);
+
+    this.coinCount = coinPool % needed;
+    this.superJumps += superJumpsGranted;
+    this.ui.updateCoins(this.coinCount, needed);
+    if (superJumpsGranted > 0) this.ui.updateSuperJumps(this.superJumps);
+
+    return { grantedCoins: grant, superJumpsGranted };
+  }
+
+  activateCheatCoins() {
+    if (this.state !== GAME_STATES.PLAYING) return;
+    this.addCoins(GAME_CONFIG.cheats.rewardCoins);
+    this.ui.showToast(`Cheat activated: +${GAME_CONFIG.cheats.rewardCoins} coins`, 'info');
   }
 
   update(dt) {
