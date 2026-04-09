@@ -173,6 +173,9 @@ const input = new InputManager({
     const enabled = game.toggleCollisionDebug();
     ui.setHitboxes(enabled);
   },
+  onToggleTerrainDebug: () => {
+    game.toggleTerrainDebug();
+  },
   onPause: () => {
     if (game.state === GAME_STATES.MENU || game.state === GAME_STATES.GAME_OVER || !ui.infoScreen.classList.contains('hidden')) return;
     game.togglePause();
