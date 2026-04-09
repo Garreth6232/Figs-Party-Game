@@ -274,7 +274,7 @@ export const ASSET_METADATA = [
   },
   {
     key: 'portlandOregonSign',
-    path: 'assets/environment/portland oregon sign.png',
+    path: 'assets/environment/portlandsign1.png',
     category: 'props',
     label: 'Portland Oregon Sign',
     description: 'Opening landmark sign prop intended to appear once near the start of a run.',

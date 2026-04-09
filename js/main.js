@@ -12,6 +12,9 @@ const audio = new AudioSystem(STORAGE_KEYS.muted);
 const leaderboard = new LeaderboardStore(STORAGE_KEYS.leaderboard);
 const runtimeSettings = new RuntimeSettings(STORAGE_KEYS.localTuning);
 
+// Recovery pass: clear persisted local tuning so stale debug overrides cannot brick resets/boot.
+runtimeSettings.clearAll();
+
 let lastGameOver = { score: 0, message: 'Run ended.' };
 let leaderboardReturnScreen = 'menu';
 let latestLeaderboardEntryId = null;

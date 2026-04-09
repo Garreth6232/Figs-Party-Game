@@ -53,18 +53,7 @@ export class Game {
       worldSeed: this.worldSeed
     });
     this.terrainDebugEnabled = false;
-    this.runtimeLaneLabelsVisible = true;
-    this.runtimeHitboxOpacity = 0.7;
-    this.runtimeRenderScale = { player: 1, car: 1, train: 1 };
-    this.runtimePropDensity = 1;
-    this.runtimeTrafficSpeedMultiplier = 1;
-    this.runtimeRiverDensity = 1;
-    this.runtimeCameraOffsetRows = 3;
-    this.runtimeSuperJumpDistance = GAME_CONFIG.superJump.launchDistance;
-    this.runtimeCoinsPerSuperJump = GAME_CONFIG.coins.coinsNeededForSuperJump;
-    this.runtimeCoinSpawnChance = GAME_CONFIG.coins.spawnChancePerSecond;
-    this.runtimeTrainWarningLead = GAME_CONFIG.trainWarning.leadTime;
-    this.baseConfig = { baseMoveCooldown: GAME_CONFIG.baseMoveCooldown };
+    this.resetRuntimeGameplaySettings();
     this.missingAssets = new Set();
     this.resize();
     this.loadSprites();
@@ -154,8 +143,24 @@ export class Game {
     }));
   }
 
+  resetRuntimeGameplaySettings() {
+    this.runtimeLaneLabelsVisible = true;
+    this.runtimeHitboxOpacity = 0.7;
+    this.runtimeRenderScale = { player: 1, car: 1, train: 1 };
+    this.runtimePropDensity = 1;
+    this.runtimeTrafficSpeedMultiplier = 1;
+    this.runtimeRiverDensity = 1;
+    this.runtimeCameraOffsetRows = 3;
+    this.runtimeSuperJumpDistance = GAME_CONFIG.superJump.launchDistance;
+    this.runtimeCoinsPerSuperJump = GAME_CONFIG.coins.coinsNeededForSuperJump;
+    this.runtimeCoinSpawnChance = GAME_CONFIG.coins.spawnChancePerSecond;
+    this.runtimeTrainWarningLead = GAME_CONFIG.trainWarning.leadTime;
+    this.baseConfig = { baseMoveCooldown: GAME_CONFIG.baseMoveCooldown };
+  }
+
   reset() {
-    this.runtimeSettings?.applyToGame(this);
+    // Recovery mode: ignore persisted runtime overrides during resets until core gameplay stability is confirmed.
+    this.resetRuntimeGameplaySettings();
     this.player = {
       x: Math.floor(GAME_CONFIG.cols / 2),
       fx: Math.floor(GAME_CONFIG.cols / 2),
@@ -184,7 +189,7 @@ export class Game {
     this.time = 0;
     this.superJumpVisualTimer = 0;
     this.superJumpState = null;
-    this.cameraY = this.player.y - 3;
+    this.cameraY = this.player.y - this.runtimeCameraOffsetRows;
     this.shake = 0;
     this.shakeTimer = 0;
     this.nextHazardId = 1;
