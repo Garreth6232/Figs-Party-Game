@@ -64,7 +64,7 @@ Replace files in these folders with your own art/audio while keeping names or up
 - `/assets/vehicles` → `car1` (png) is reused by standard road variants (`car2`, `car3`, `bike1`, `scooter1`), plus `maxTrain` (png)
 - `/assets/hazards` → `log1` (jpg), `raft1` (jpg), `kayak1` (jpg)
 - `/assets/collectibles` → `coin` (png)
-- `/assets/environment` → `grassTile` (jpg), `riverTile` (png), `roadTile` (jpg), `railTile` (jpg), `sidewalkTile` (jpg), `bridgeTile`, `tree1` (png), `foodCart` (png)
+- `/assets/environment` → `grassTile` (jpg), `riverTile` (png), `roadTile` (jpg), `railTile` (jpg), `sidewalkTile` (jpg), `tree1` (png), `foodCart` (png), `benson1` (png)
 - `/assets/ui` → UI-only indicators (example: `superJumpReady`)
 - `/assets/audio` → optional audio files
 

@@ -1,5 +1,6 @@
 import { ASSET_MANIFEST, GAME_CONFIG, GAME_STATES, LANE_DEFINITIONS, STANDARD_ROAD_VEHICLE_ASSET_KEY, STORAGE_KEYS } from './config.js';
 import { CollisionSystem } from './collision.js';
+import { TerrainSystem } from './terrain-system.js';
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const randRange = (min, max) => Math.random() * (max - min) + min;
@@ -12,16 +13,6 @@ const easeOutBack = (t) => {
   return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
 };
 
-function weightedLaneType(weights) {
-  const total = weights.reduce((sum, entry) => sum + entry.weight, 0);
-  let cursor = Math.random() * total;
-  for (const entry of weights) {
-    cursor -= entry.weight;
-    if (cursor <= 0) return entry.type;
-  }
-  return weights[0].type;
-}
-
 function randomFrom(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
@@ -31,7 +22,6 @@ const DEFAULT_MOVING_PROFILE = {
   collision: { type: 'car', width: 1, height: 0.5, offsetX: 0, offsetY: 0 }
 };
 
-const DEFAULT_LANE_TYPE = 'grass';
 
 export class Game {
   constructor({ canvas, audio, ui, onGameOver = null }) {
@@ -50,6 +40,14 @@ export class Game {
     this.superJumpVisualTimer = 0;
     this.superJumpState = null;
     this.collisionSystem = new CollisionSystem();
+    this.worldSeed = Math.floor(Math.random() * 1000000);
+    this.terrainSystem = new TerrainSystem({
+      gameConfig: GAME_CONFIG,
+      laneDefinitions: LANE_DEFINITIONS,
+      worldSeed: this.worldSeed
+    });
+    this.terrainDebugEnabled = false;
+    this.missingAssets = new Set();
     this.resize();
     this.loadSprites();
     window.addEventListener('resize', () => this.resize());
@@ -57,6 +55,23 @@ export class Game {
   }
 
   loadSprites() {
+    const registerImage = (bucket, key, src) => {
+      const image = new Image();
+      image.src = src;
+      image.decoding = 'async';
+      image.loading = 'eager';
+      image.onerror = () => {
+        const record = `${key}:${src}`;
+        this.missingAssets.add(record);
+        if (/localhost|127\\.0\\.0\\.1/.test(window.location.hostname)) {
+          throw new Error(`[Asset Missing] ${record}`);
+        } else {
+          console.error(`[Asset Missing] ${record}`);
+        }
+      };
+      bucket[key] = image;
+    };
+
     const sprites = ASSET_MANIFEST.player;
     const playerMap = {
       forward: sprites.figForward,
@@ -66,10 +81,7 @@ export class Game {
       superJump: sprites.figSJ
     };
     for (const [direction, src] of Object.entries(playerMap)) {
-      const image = new Image();
-      image.src = src;
-      image.decoding = 'async';
-      this.playerSprites[direction] = image;
+      registerImage(this.playerSprites, direction, src);
     }
 
     const worldSprites = {
@@ -85,25 +97,16 @@ export class Game {
     };
 
     for (const [key, src] of Object.entries(worldSprites)) {
-      const image = new Image();
-      image.src = src;
-      image.decoding = 'async';
-      if (key === 'coin') this.collectibleSprites[key] = image;
-      else this.environmentSprites[key] = image;
+      if (key === 'coin') registerImage(this.collectibleSprites, key, src);
+      else registerImage(this.environmentSprites, key, src);
     }
 
     for (const [key, src] of Object.entries(ASSET_MANIFEST.vehicles)) {
-      const image = new Image();
-      image.src = src;
-      image.decoding = 'async';
-      this.vehicleSprites[key] = image;
+      registerImage(this.vehicleSprites, key, src);
     }
 
     for (const [key, src] of Object.entries(ASSET_MANIFEST.hazards)) {
-      const image = new Image();
-      image.src = src;
-      image.decoding = 'async';
-      this.hazardSprites[key] = image;
+      registerImage(this.hazardSprites, key, src);
     }
   }
 
@@ -187,6 +190,12 @@ export class Game {
     const enabled = this.collisionSystem.toggleDebug();
     this.ui.showToast(`Collision debug ${enabled ? 'ON' : 'OFF'}`, 'info');
     return enabled;
+  }
+
+  toggleTerrainDebug() {
+    this.terrainDebugEnabled = !this.terrainDebugEnabled;
+    this.ui.showToast(`Terrain debug ${this.terrainDebugEnabled ? 'ON' : 'OFF'}`, 'info');
+    return this.terrainDebugEnabled;
   }
 
   setCollisionDebug(enabled) {
@@ -455,12 +464,8 @@ export class Game {
     return true;
   }
 
-  isLaneSafeForSpawn(y) {
-    return y <= GAME_CONFIG.safeZones.guaranteedSafeRows;
-  }
-
   getLaneDefinition(laneType) {
-    return LANE_DEFINITIONS[laneType] ?? LANE_DEFINITIONS[DEFAULT_LANE_TYPE];
+    return LANE_DEFINITIONS[laneType] ?? LANE_DEFINITIONS.grass;
   }
 
   laneSupportsHazards(lane) {
@@ -487,44 +492,17 @@ export class Game {
 
   ensureLane(y) {
     if (this.laneCache.has(y)) return;
-
-    const weightedType = this.isLaneSafeForSpawn(y) ? DEFAULT_LANE_TYPE : weightedLaneType(GAME_CONFIG.laneWeights);
-    const type = this.getLaneDefinition(weightedType).key;
-    const direction = Math.random() > 0.5 ? 1 : -1;
-    const lane = {
-      y,
-      type,
-      direction,
-      speed: 0,
-      timer: 0,
-      interval: 2,
-      seed: Math.random() * 1000,
-      warningActive: false,
-      surface: this.getLaneDefinition(type).surface
-    };
-
-    if (type === 'road') {
-      lane.speed = randRange(1.35, 2.7) + this.score * 0.012;
-      lane.interval = randRange(1.75, 2.8);
-    } else if (type === 'water') {
-      lane.speed = randRange(GAME_CONFIG.riverPlatforms.minSpeed, GAME_CONFIG.riverPlatforms.maxSpeed);
-      lane.platformType = randomFrom(this.getLaneDefinition(type).allowedPlatforms);
+    const lane = this.terrainSystem.createLane(y, this.score);
+    if (lane.type === 'water') {
       const platformW = this.getMovingProfile(lane.platformType).render.width;
       const maxIntervalByGap = GAME_CONFIG.riverPlatforms.maxGapSeconds - platformW / lane.speed;
-      lane.interval = clamp(
-        randRange(GAME_CONFIG.riverPlatforms.minInterval, GAME_CONFIG.riverPlatforms.maxInterval),
-        GAME_CONFIG.riverPlatforms.minInterval,
-        Math.max(GAME_CONFIG.riverPlatforms.minInterval, maxIntervalByGap)
-      );
+      lane.interval = clamp(lane.interval, GAME_CONFIG.riverPlatforms.minInterval, Math.max(GAME_CONFIG.riverPlatforms.minInterval, maxIntervalByGap));
       this.seedWaterLanePlatforms(lane);
-    } else if (type === 'rail') {
-      lane.speed = randRange(GAME_CONFIG.railHazard.minSpeed, GAME_CONFIG.railHazard.maxSpeed) + this.score * GAME_CONFIG.railHazard.scoreScale;
-      lane.interval = randRange(GAME_CONFIG.railHazard.minInterval, GAME_CONFIG.railHazard.maxInterval);
-      lane.warningLead = GAME_CONFIG.trainWarning.leadTime;
-      lane.warningActive = false;
-      lane.pendingSpawn = false;
     }
     this.laneCache.set(y, lane);
+    this.terrainSystem.updateConnectedContextForLane(y, this.laneCache);
+    this.terrainSystem.updateConnectedContextForLane(y - 1, this.laneCache);
+    this.terrainSystem.updateConnectedContextForLane(y + 1, this.laneCache);
   }
 
   seedWaterLanePlatforms(lane) {
@@ -950,6 +928,7 @@ export class Game {
     this.drawParticles();
     this.drawRain();
     this.drawCollisionDebug();
+    this.drawTerrainDebug();
     ctx.restore();
   }
 
@@ -1029,6 +1008,11 @@ export class Game {
     const tonalAlpha = Math.max(0, grassStyle.tonalAlpha + undulation);
     ctx.fillStyle = `rgba(170, 202, 141, ${tonalAlpha})`;
     ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
+
+    this.drawConnectedLaneShading(lane, laneY, laneHeight, {
+      capTop: 'rgba(8, 16, 8, 0.3)',
+      capBottom: 'rgba(8, 16, 8, 0.28)'
+    });
   }
 
   drawWaterLane({ lane, laneY, laneHeight, laneIndex }) {
@@ -1062,6 +1046,11 @@ export class Game {
       else ctx.lineTo(x, waveY);
     }
     ctx.stroke();
+
+    this.drawConnectedLaneShading(lane, laneY, laneHeight, {
+      capTop: 'rgba(8, 18, 26, 0.5)',
+      capBottom: 'rgba(8, 18, 26, 0.5)'
+    });
   }
 
   drawRailLane({ lane, laneY, laneHeight, laneIndex }) {
@@ -1113,6 +1102,24 @@ export class Game {
       ctx.fillRect(10, Math.round(centerY - 5), 14, 10);
       ctx.fillRect(this.worldWidth - 24, Math.round(centerY - 5), 14, 10);
     }
+
+    this.drawConnectedLaneShading(lane, laneY, laneHeight, {
+      capTop: 'rgba(24, 24, 24, 0.42)',
+      capBottom: 'rgba(24, 24, 24, 0.42)'
+    });
+  }
+
+  drawConnectedLaneShading(lane, laneY, laneHeight, { capTop, capBottom }) {
+    const ctx = this.ctx;
+    const edgeHeight = Math.max(1, Math.round(laneHeight * 0.12));
+    if (!lane.connectedContext?.north) {
+      ctx.fillStyle = capTop;
+      ctx.fillRect(0, laneY, this.worldWidth, edgeHeight);
+    }
+    if (!lane.connectedContext?.south) {
+      ctx.fillStyle = capBottom;
+      ctx.fillRect(0, laneY + laneHeight - edgeHeight, this.worldWidth, edgeHeight);
+    }
   }
 
   drawLanes() {
@@ -1126,12 +1133,12 @@ export class Game {
       const laneDef = this.getLaneDefinition(lane.type);
       const laneY = this.getLaneScreenY(y);
       const laneHeight = this.getLaneScreenHeight();
-      ctx.fillStyle = GAME_CONFIG.lanePalette[laneDef.key];
+      ctx.fillStyle = GAME_CONFIG.lanePalette[lane.terrainType];
       ctx.fillRect(0, laneY, this.worldWidth, laneHeight + 1);
 
-      if (laneDef.renderMode === 'road') {
-        const roadTile = this.environmentSprites[laneDef.surface];
-        const sidewalkTile = this.environmentSprites[laneDef.shoulderSurface];
+      if (lane.terrainType === 'road') {
+        const roadTile = this.environmentSprites.roadTile;
+        const sidewalkTile = this.environmentSprites.sidewalkTile;
 
         this.drawLaneTexture(roadTile, { y: laneY, laneY: y, height: laneHeight, fallbackColor: laneDef.fallbackColor });
 
@@ -1159,8 +1166,8 @@ export class Game {
         ctx.lineTo(this.worldWidth, laneY + Math.round(laneHeight * 0.56));
         ctx.stroke();
         ctx.setLineDash([]);
-      } else if (laneDef.renderMode === 'water') this.drawWaterLane({ lane, laneY, laneHeight, laneIndex: y });
-      else if (laneDef.renderMode === 'rail') this.drawRailLane({ lane, laneY, laneHeight, laneIndex: y });
+      } else if (lane.terrainType === 'water') this.drawWaterLane({ lane, laneY, laneHeight, laneIndex: y });
+      else if (lane.terrainType === 'rail') this.drawRailLane({ lane, laneY, laneHeight, laneIndex: y });
       else this.drawGrassLane({ lane, laneY, laneHeight, laneIndex: y });
 
       this.drawProps(lane, laneY, laneDef);
@@ -1423,6 +1430,27 @@ export class Game {
 
     ctx.fillStyle = 'rgba(41, 52, 59, 0.2)';
     ctx.fillRect(0, 0, this.worldWidth, this.worldHeight);
+  }
+
+  drawTerrainDebug() {
+    if (!this.terrainDebugEnabled) return;
+    const ctx = this.ctx;
+    const playerRow = this.player.y;
+    ctx.save();
+    ctx.font = '12px monospace';
+    ctx.textBaseline = 'top';
+    for (let y = playerRow - 2; y <= playerRow + 4; y += 1) {
+      const lane = this.laneCache.get(y);
+      if (!lane) continue;
+      const info = this.terrainSystem.createDebugSnapshot(lane);
+      const screenY = this.getLaneScreenY(y) + 2;
+      const label = `y:${info.y} lane:${info.gameplayType} terrain:${info.terrainType} mask:${info.connectedMask}`;
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.fillRect(4, screenY, Math.min(this.worldWidth - 8, 420), 14);
+      ctx.fillStyle = '#f4f6f8';
+      ctx.fillText(label, 8, screenY + 1);
+    }
+    ctx.restore();
   }
 
   drawCollisionDebug() {

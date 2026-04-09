@@ -217,16 +217,6 @@ export const ASSET_METADATA = [
     visibleInDevAssetBrowser: true
   },
   {
-    key: 'bridgeTile',
-    path: 'assets/environment/bridgeTile.svg',
-    category: 'environment tiles',
-    label: 'Bridge Tile',
-    description: 'Bridge texture for optional themed lanes.',
-    interactionType: 'ignore',
-    visibleInInfoMenu: false,
-    visibleInDevAssetBrowser: true
-  },
-  {
     key: 'tree1',
     path: 'assets/environment/tree1.png',
     category: 'props',
@@ -290,7 +280,7 @@ export const ASSET_MANIFEST = {
   vehicles: buildAssetGroup(['car1', 'car2', 'car3', 'bike1', 'scooter1', 'maxTrain']),
   hazards: buildAssetGroup(['log1', 'raft1', 'kayak1']),
   collectibles: buildAssetGroup(['coin']),
-  environment: buildAssetGroup(['grassTile', 'riverTile', 'roadTile', 'railTile', 'sidewalkTile', 'bridgeTile', 'tree1', 'foodCart', 'benson1']),
+  environment: buildAssetGroup(['grassTile', 'riverTile', 'roadTile', 'railTile', 'sidewalkTile', 'tree1', 'foodCart', 'benson1']),
   ui: buildAssetGroup(['superJumpReady']),
   warnings: buildAssetGroup(['trainWarning']),
   audio: {
@@ -384,6 +374,7 @@ export const GAME_CONFIG = {
   debug: {
     collisionOverlay: false,
     keyToggle: 'KeyC',
+    terrainDebugKeyToggle: 'KeyV',
     password: '123'
   },
   alignment: {

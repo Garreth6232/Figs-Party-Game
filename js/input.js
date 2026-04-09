@@ -10,13 +10,14 @@ const KEY_TO_DIR = {
 };
 
 export class InputManager {
-  constructor({ canvas, touchContainer, onMove, onPause, onSuperJump, onToggleDebug, shouldCaptureKeyboard }) {
+  constructor({ canvas, touchContainer, onMove, onPause, onSuperJump, onToggleDebug, onToggleTerrainDebug, shouldCaptureKeyboard }) {
     this.canvas = canvas;
     this.touchContainer = touchContainer;
     this.onMove = onMove;
     this.onPause = onPause;
     this.onSuperJump = onSuperJump;
     this.onToggleDebug = onToggleDebug;
+    this.onToggleTerrainDebug = onToggleTerrainDebug;
     this.shouldCaptureKeyboard = shouldCaptureKeyboard;
     this.swipeStart = null;
     this.holdInterval = null;
@@ -33,6 +34,10 @@ export class InputManager {
       }
       if (event.code === 'KeyC') {
         this.onToggleDebug?.();
+        return;
+      }
+      if (event.code === 'KeyV') {
+        this.onToggleTerrainDebug?.();
         return;
       }
       if (event.code === 'KeyJ' || event.code === 'Space') {
