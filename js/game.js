@@ -538,6 +538,31 @@ export class Game {
     return key;
   }
 
+  resolveDecorSpawnGroup(groupKey) {
+    if (!groupKey) return [];
+    const groupRule = GAME_CONFIG.props.rules?.[groupKey];
+    if (groupRule?.family) return groupRule.family;
+    return [groupKey];
+  }
+
+  areDecorAssetsMutuallyExclusive(assetA, assetB) {
+    if (!assetA || !assetB) return false;
+    const exclusions = GAME_CONFIG.props.rules?.mutualExclusions ?? {};
+    const groupsA = exclusions[assetA] ?? [];
+    const groupsB = exclusions[assetB] ?? [];
+    const blockedByA = groupsA.some((groupKey) => this.resolveDecorSpawnGroup(groupKey).includes(assetB));
+    if (blockedByA) return true;
+    return groupsB.some((groupKey) => this.resolveDecorSpawnGroup(groupKey).includes(assetA));
+  }
+
+  canSpawnDecorWithLaneProps(assetKey, laneAssetKeys) {
+    if (!assetKey) return false;
+    for (const existingAsset of laneAssetKeys) {
+      if (this.areDecorAssetsMutuallyExclusive(assetKey, existingAsset)) return false;
+    }
+    return true;
+  }
+
   canUseDecorAsset(assetKey) {
     if (!assetKey) return false;
     const path = ASSET_MANIFEST.environment?.[assetKey];
@@ -574,6 +599,7 @@ export class Game {
   generateLaneProps(lane) {
     const laneDef = this.getLaneDefinition(lane.type);
     const props = [];
+    const laneAssetKeys = new Set();
     const density = this.runtimePropDensity * GAME_CONFIG.props.laneDecorationDensity;
     const laneRoll = hash01(this.worldSeed * 0.81 + lane.y * 0.327);
 
@@ -588,7 +614,10 @@ export class Game {
           offsetY: GAME_CONFIG.props.render.tree1.offsetY,
           edgePadding: 0.2 + i * 0.3
         });
-        if (treeProp) props.push(treeProp);
+        if (treeProp) {
+          props.push(treeProp);
+          laneAssetKeys.add('tree1');
+        }
       }
     }
 
@@ -596,15 +625,21 @@ export class Game {
       const variant = Math.floor(lane.seed * 1000) % 2 === 0 ? 'foodCart' : 'benson1';
       const profile = GAME_CONFIG.props.render[variant];
       const roadProp = this.createDecorProp(variant, lane, { ...profile, edgePadding: 0.2 });
-      if (roadProp) props.push(roadProp);
+      if (roadProp) {
+        props.push(roadProp);
+        laneAssetKeys.add(variant);
+      }
     }
 
     if (['grass', 'road'].includes(laneDef.key) && laneRoll < GAME_CONFIG.props.roadSignSpawnChance * density) {
       const sign = this.nextStreetSignAsset();
-      if (sign) {
+      if (sign && this.canSpawnDecorWithLaneProps(sign, laneAssetKeys)) {
         const profile = GAME_CONFIG.props.render[sign];
         const signProp = this.createDecorProp(sign, lane, { ...profile, edgePadding: 0.08 + hash01(lane.y) * 0.5, zIndex: 2 });
-        if (signProp) props.push(signProp);
+        if (signProp) {
+          props.push(signProp);
+          laneAssetKeys.add(sign);
+        }
       }
     }
 
@@ -614,6 +649,7 @@ export class Game {
       if (landmark) {
         this.propRuntime.landmarksSpawned.add('portland');
         props.push(landmark);
+        laneAssetKeys.add('portlandOregonSign');
       }
     }
 
@@ -623,6 +659,7 @@ export class Game {
       if (landmark) {
         this.propRuntime.landmarksSpawned.add('bookstore');
         props.push(landmark);
+        laneAssetKeys.add('bookstore1');
       }
     }
 
