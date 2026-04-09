@@ -1,7 +1,8 @@
 export const STORAGE_KEYS = {
   bestScore: 'fig_game_best',
   muted: 'fig_game_muted',
-  leaderboard: 'fig_game_leaderboard_v1'
+  leaderboard: 'fig_game_leaderboard_v1',
+  localTuning: 'fig_game_local_tuning_v1'
 };
 
 export const GAME_STATES = {
@@ -272,6 +273,76 @@ export const ASSET_METADATA = [
     visibleInDevAssetBrowser: true
   },
   {
+    key: 'portlandOregonSign',
+    path: 'assets/environment/portland oregon sign.png',
+    category: 'props',
+    label: 'Portland Oregon Sign',
+    description: 'Opening landmark sign prop intended to appear once near the start of a run.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'sign1',
+    path: 'assets/environment/sign1.png',
+    category: 'props',
+    label: 'Street Sign 1',
+    description: 'Decorative street sign variant used in rotating roadside prop spawns.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'sign2',
+    path: 'assets/environment/sign2.png',
+    category: 'props',
+    label: 'Street Sign 2',
+    description: 'Decorative street sign variant used in rotating roadside prop spawns.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'sign3',
+    path: 'assets/environment/sign3.png',
+    category: 'props',
+    label: 'Street Sign 3',
+    description: 'Decorative street sign variant used in rotating roadside prop spawns.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'sign4',
+    path: 'assets/environment/sign4.png',
+    category: 'props',
+    label: 'Street Sign 4',
+    description: 'Decorative street sign variant used in rotating roadside prop spawns.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'sign5',
+    path: 'assets/environment/sign5.png',
+    category: 'props',
+    label: 'Street Sign 5',
+    description: 'Decorative street sign variant used in rotating roadside prop spawns.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: false,
+    visibleInDevAssetBrowser: true
+  },
+  {
+    key: 'bookstore1',
+    path: 'assets/environment/bookstore1.png',
+    category: 'props',
+    label: 'Bookstore Landmark',
+    description: 'Large decorative bookstore landmark that appears once per run.',
+    interactionType: 'ignore',
+    visibleInInfoMenu: true,
+    visibleInDevAssetBrowser: true
+  },
+  {
     key: 'superJumpReady',
     path: 'assets/ui/superJumpReady.svg',
     category: 'UI assets',
@@ -305,7 +376,23 @@ export const ASSET_MANIFEST = {
   vehicles: buildAssetGroup(['car1', 'car2', 'car3', 'bike1', 'scooter1', 'maxTrain']),
   hazards: buildAssetGroup(['log1', 'raft1', 'kayak1']),
   collectibles: buildAssetGroup(['coin']),
-  environment: buildAssetGroup(['grassTile', 'riverTile', 'roadTile', 'railTile', 'sidewalkTile', 'tree1', 'foodCart', 'benson1']),
+  environment: buildAssetGroup([
+    'grassTile',
+    'riverTile',
+    'roadTile',
+    'railTile',
+    'sidewalkTile',
+    'tree1',
+    'foodCart',
+    'benson1',
+    'portlandOregonSign',
+    'sign1',
+    'sign2',
+    'sign3',
+    'sign4',
+    'sign5',
+    'bookstore1'
+  ]),
   ui: buildAssetGroup(['superJumpReady']),
   warnings: buildAssetGroup(['trainWarning']),
   audio: {
@@ -618,6 +705,29 @@ export const GAME_CONFIG = {
   },
   tuning: {
     movingEntities: MOVING_ENTITY_TUNING
+  },
+  props: {
+    roadSignSpawnChance: 0.3,
+    laneDecorationDensity: 1,
+    earlyLandmarkDistance: { min: 7, max: 11 },
+    largeLandmarkDistance: { min: 18, max: 26 },
+    rules: {
+      portlandOregonSign: { oncePerRun: true, placement: 'earlyLandmark', lanes: ['grass', 'road'] },
+      streetSigns: { family: ['sign1', 'sign2', 'sign3', 'sign4', 'sign5'], placement: 'rotatingFamily', lanes: ['grass', 'road'] },
+      bookstore1: { oncePerRun: true, placement: 'largeLandmark', lanes: ['grass', 'road'] }
+    },
+    render: {
+      tree1: { width: 0.32, height: 0.44, offsetY: 0.15, anchor: 'center' },
+      foodCart: { width: 0.46, height: 0.36, offsetY: 0.54, anchor: 'edge' },
+      benson1: { width: 0.5, height: 0.38, offsetY: 0.54, anchor: 'edge' },
+      portlandOregonSign: { width: 1.2, height: 0.68, offsetY: 0.24, anchor: 'edge' },
+      bookstore1: { width: 2.4, height: 2.3, offsetY: -1.08, anchor: 'edge' },
+      sign1: { width: 0.34, height: 0.46, offsetY: 0.22, anchor: 'edge' },
+      sign2: { width: 0.34, height: 0.46, offsetY: 0.22, anchor: 'edge' },
+      sign3: { width: 0.34, height: 0.46, offsetY: 0.22, anchor: 'edge' },
+      sign4: { width: 0.34, height: 0.46, offsetY: 0.22, anchor: 'edge' },
+      sign5: { width: 0.34, height: 0.46, offsetY: 0.22, anchor: 'edge' }
+    }
   }
 };
 
