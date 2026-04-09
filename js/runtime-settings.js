@@ -173,6 +173,7 @@ const SETTING_DEFINITIONS = {
 };
 
 const deepClone = (value) => JSON.parse(JSON.stringify(value));
+const isFiniteNumber = (value) => Number.isFinite(Number(value));
 
 export class RuntimeSettings {
   constructor(storageKey = STORAGE_KEYS.localTuning) {
@@ -188,12 +189,21 @@ export class RuntimeSettings {
       const parsed = JSON.parse(raw);
       return typeof parsed === 'object' && parsed ? parsed : {};
     } catch {
+      try {
+        localStorage.removeItem(this.storageKey);
+      } catch {
+        // ignored
+      }
       return {};
     }
   }
 
   saveOverrides() {
-    localStorage.setItem(this.storageKey, JSON.stringify(this.overrides));
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(this.overrides));
+    } catch {
+      // ignored
+    }
   }
 
   getValue(key) {
@@ -202,6 +212,7 @@ export class RuntimeSettings {
     const raw = this.overrides[key];
     if (raw === undefined) return deepClone(definition.defaultValue);
     if (definition.type === 'toggle') return Boolean(raw);
+    if (!isFiniteNumber(raw)) return deepClone(definition.defaultValue);
     return clamp(Number(raw), definition.min, definition.max);
   }
 
@@ -216,7 +227,8 @@ export class RuntimeSettings {
     const definition = this.definitions[key];
     if (!definition) return;
     if (definition.type === 'toggle') this.overrides[key] = Boolean(value);
-    else this.overrides[key] = clamp(Number(value), definition.min, definition.max);
+    else if (isFiniteNumber(value)) this.overrides[key] = clamp(Number(value), definition.min, definition.max);
+    else delete this.overrides[key];
     this.saveOverrides();
   }
 

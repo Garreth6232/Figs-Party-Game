@@ -74,6 +74,7 @@ export class Game {
 
   loadSprites() {
     const registerImage = (bucket, key, src) => {
+      if (!src || typeof src !== 'string') return;
       const image = new Image();
       image.src = src;
       image.decoding = 'async';
@@ -81,11 +82,7 @@ export class Game {
       image.onerror = () => {
         const record = `${key}:${src}`;
         this.missingAssets.add(record);
-        if (/localhost|127\\.0\\.0\\.1/.test(window.location.hostname)) {
-          throw new Error(`[Asset Missing] ${record}`);
-        } else {
-          console.error(`[Asset Missing] ${record}`);
-        }
+        console.warn(`[Asset Missing] ${record}`);
       };
       bucket[key] = image;
     };
@@ -508,7 +505,7 @@ export class Game {
     const large = GAME_CONFIG.props.largeLandmarkDistance;
     const earlyLandmarkY = this.player.y + Math.round(randRange(early.min, early.max));
     const bookstoreY = this.player.y + Math.round(randRange(large.min, large.max));
-    const signs = [...GAME_CONFIG.props.rules.streetSigns.family];
+    const signs = GAME_CONFIG.props.rules.streetSigns.family.filter((key) => this.canUseDecorAsset(key));
     for (let i = signs.length - 1; i > 0; i -= 1) {
       const j = Math.floor(hash01(this.worldSeed + i * 1.27) * (i + 1));
       [signs[i], signs[j]] = [signs[j], signs[i]];
@@ -524,8 +521,9 @@ export class Game {
 
   nextStreetSignAsset() {
     if (!this.propRuntime.streetSignBag.length) {
-      this.propRuntime.streetSignBag = [...GAME_CONFIG.props.rules.streetSigns.family];
+      this.propRuntime.streetSignBag = GAME_CONFIG.props.rules.streetSigns.family.filter((key) => this.canUseDecorAsset(key));
     }
+    if (!this.propRuntime.streetSignBag.length) return null;
     let key = this.propRuntime.streetSignBag.shift();
     if (key === this.propRuntime.lastStreetSign && this.propRuntime.streetSignBag.length > 0) {
       this.propRuntime.streetSignBag.push(key);
@@ -535,19 +533,35 @@ export class Game {
     return key;
   }
 
+  canUseDecorAsset(assetKey) {
+    if (!assetKey) return false;
+    const path = ASSET_MANIFEST.environment?.[assetKey];
+    if (!path) return false;
+    const hasRecord = [...this.missingAssets].some((entry) => entry.startsWith(`${assetKey}:`));
+    return !hasRecord;
+  }
+
   createDecorProp(assetKey, lane, options = {}) {
+    if (!this.canUseDecorAsset(assetKey)) return null;
+    const width = options.width ?? 0.5;
+    const height = options.height ?? 0.5;
+    const offsetY = options.offsetY ?? 0.5;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    if (!Number.isFinite(offsetY)) return null;
     const anchor = options.anchor ?? (lane.direction > 0 ? 'right' : 'left');
     const edgePadding = options.edgePadding ?? 0.28;
     const x =
-      anchor === 'right'
-        ? GAME_CONFIG.cols - (options.width ?? 0.6) - edgePadding
+      anchor === 'right' || anchor === 'edge'
+        ? GAME_CONFIG.cols - width - edgePadding
         : edgePadding;
+    const maxX = GAME_CONFIG.cols - width;
+    if (!Number.isFinite(x) || maxX < 0) return null;
     return {
       assetKey,
-      x,
-      width: options.width ?? 0.5,
-      height: options.height ?? 0.5,
-      offsetY: options.offsetY ?? 0.5,
+      x: clamp(x, 0, maxX),
+      width,
+      height,
+      offsetY,
       zIndex: options.zIndex ?? 1
     };
   }
@@ -562,40 +576,49 @@ export class Game {
       const treeCount = laneRoll < 0.4 * density ? 2 : 1;
       for (let i = 0; i < treeCount; i += 1) {
         const leftSide = (i + Math.floor(lane.seed * 10)) % 2 === 0;
-        props.push(
-          this.createDecorProp('tree1', lane, {
-            anchor: leftSide ? 'left' : 'right',
-            width: GAME_CONFIG.props.render.tree1.width,
-            height: GAME_CONFIG.props.render.tree1.height,
-            offsetY: GAME_CONFIG.props.render.tree1.offsetY,
-            edgePadding: 0.2 + i * 0.3
-          })
-        );
+        const treeProp = this.createDecorProp('tree1', lane, {
+          anchor: leftSide ? 'left' : 'right',
+          width: GAME_CONFIG.props.render.tree1.width,
+          height: GAME_CONFIG.props.render.tree1.height,
+          offsetY: GAME_CONFIG.props.render.tree1.offsetY,
+          edgePadding: 0.2 + i * 0.3
+        });
+        if (treeProp) props.push(treeProp);
       }
     }
 
     if (laneDef.key === 'road' && laneRoll < 0.42 * density) {
       const variant = Math.floor(lane.seed * 1000) % 2 === 0 ? 'foodCart' : 'benson1';
       const profile = GAME_CONFIG.props.render[variant];
-      props.push(this.createDecorProp(variant, lane, { ...profile, edgePadding: 0.2 }));
+      const roadProp = this.createDecorProp(variant, lane, { ...profile, edgePadding: 0.2 });
+      if (roadProp) props.push(roadProp);
     }
 
     if (['grass', 'road'].includes(laneDef.key) && laneRoll < GAME_CONFIG.props.roadSignSpawnChance * density) {
       const sign = this.nextStreetSignAsset();
-      const profile = GAME_CONFIG.props.render[sign];
-      props.push(this.createDecorProp(sign, lane, { ...profile, edgePadding: 0.08 + hash01(lane.y) * 0.5, zIndex: 2 }));
+      if (sign) {
+        const profile = GAME_CONFIG.props.render[sign];
+        const signProp = this.createDecorProp(sign, lane, { ...profile, edgePadding: 0.08 + hash01(lane.y) * 0.5, zIndex: 2 });
+        if (signProp) props.push(signProp);
+      }
     }
 
     if (!this.propRuntime.landmarksSpawned.has('portland') && lane.y === this.propRuntime.earlyLandmarkY && ['grass', 'road'].includes(laneDef.key)) {
-      this.propRuntime.landmarksSpawned.add('portland');
       const profile = GAME_CONFIG.props.render.portlandOregonSign;
-      props.push(this.createDecorProp('portlandOregonSign', lane, { ...profile, anchor: 'left', edgePadding: 0.18, zIndex: 3 }));
+      const landmark = this.createDecorProp('portlandOregonSign', lane, { ...profile, anchor: 'left', edgePadding: 0.18, zIndex: 3 });
+      if (landmark) {
+        this.propRuntime.landmarksSpawned.add('portland');
+        props.push(landmark);
+      }
     }
 
     if (!this.propRuntime.landmarksSpawned.has('bookstore') && lane.y === this.propRuntime.bookstoreY && ['grass', 'road'].includes(laneDef.key)) {
-      this.propRuntime.landmarksSpawned.add('bookstore');
       const profile = GAME_CONFIG.props.render.bookstore1;
-      props.push(this.createDecorProp('bookstore1', lane, { ...profile, anchor: 'right', edgePadding: 0.05, zIndex: 0 }));
+      const landmark = this.createDecorProp('bookstore1', lane, { ...profile, anchor: 'right', edgePadding: 0.05, zIndex: 0 });
+      if (landmark) {
+        this.propRuntime.landmarksSpawned.add('bookstore');
+        props.push(landmark);
+      }
     }
 
     return props;
