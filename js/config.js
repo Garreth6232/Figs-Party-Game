@@ -22,6 +22,11 @@ const MOVING_ENTITY_TUNING = Object.freeze({
   carHitboxScale: 1.1
 });
 
+const PROP_RENDER_TUNING = Object.freeze({
+  streetSignRenderScale: 2,
+  portlandOregonSignRenderScale: 1.5
+});
+
 const scaleRenderProfile = (profile, scale) => ({
   ...profile,
   render: {
@@ -38,6 +43,12 @@ const scaleCollisionProfile = (profile, scale) => ({
     width: profile.collision.width * scale,
     height: profile.collision.height * scale
   }
+});
+
+const scalePropRenderProfile = (profile, scale) => ({
+  ...profile,
+  width: profile.width * scale,
+  height: profile.height * scale
 });
 
 export const ASSET_METADATA = [
@@ -714,7 +725,10 @@ export const GAME_CONFIG = {
     rules: {
       portlandOregonSign: { oncePerRun: true, placement: 'earlyLandmark', lanes: ['grass', 'road'] },
       streetSigns: { family: ['sign1', 'sign2', 'sign3', 'sign4', 'sign5'], placement: 'rotatingFamily', lanes: ['grass', 'road'] },
-      bookstore1: { oncePerRun: true, placement: 'largeLandmark', lanes: ['grass', 'road'] }
+      bookstore1: { oncePerRun: true, placement: 'largeLandmark', lanes: ['grass', 'road'] },
+      mutualExclusions: {
+        foodCart: ['streetSigns']
+      }
     },
     render: {
       tree1: { width: 0.32, height: 0.44, offsetY: 0.15, anchor: 'center' },
@@ -752,3 +766,14 @@ GAME_CONFIG.movingEntities.profiles.maxTrain = {
     height: GAME_CONFIG.movingEntities.profiles.maxTrain.collision.height
   }
 };
+
+GAME_CONFIG.props.render.portlandOregonSign = scalePropRenderProfile(
+  GAME_CONFIG.props.render.portlandOregonSign,
+  PROP_RENDER_TUNING.portlandOregonSignRenderScale
+);
+
+for (const signKey of GAME_CONFIG.props.rules.streetSigns.family) {
+  const profile = GAME_CONFIG.props.render[signKey];
+  if (!profile) continue;
+  GAME_CONFIG.props.render[signKey] = scalePropRenderProfile(profile, PROP_RENDER_TUNING.streetSignRenderScale);
+}
