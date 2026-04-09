@@ -30,7 +30,14 @@
     "sidewalkTile": "assets/environment/SidewalkTile.jpg",
     "tree1": "assets/environment/tree1.png",
     "foodCart": "assets/environment/foodcart.png",
-    "benson1": "assets/environment/benson1.png"
+    "benson1": "assets/environment/benson1.png",
+    "portlandOregonSign": "assets/environment/portland oregon sign.png",
+    "sign1": "assets/environment/sign1.png",
+    "sign2": "assets/environment/sign2.png",
+    "sign3": "assets/environment/sign3.png",
+    "sign4": "assets/environment/sign4.png",
+    "sign5": "assets/environment/sign5.png",
+    "bookstore1": "assets/environment/bookstore1.png"
   },
   "ui": {
     "superJumpReady": "assets/ui/superJumpReady.svg"

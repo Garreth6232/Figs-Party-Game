@@ -1,6 +1,7 @@
 import { ASSET_MANIFEST, GAME_CONFIG, GAME_STATES, LANE_DEFINITIONS, STANDARD_ROAD_VEHICLE_ASSET_KEY, STORAGE_KEYS } from './config.js';
 import { CollisionSystem } from './collision.js';
 import { TerrainSystem } from './terrain-system.js';
+import { DEATH_CAUSES, getDeathMessage } from './death-messages.js';
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const randRange = (min, max) => Math.random() * (max - min) + min;
@@ -11,6 +12,10 @@ const easeOutBack = (t) => {
   const c1 = 1.70158;
   const c3 = c1 + 1;
   return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
+};
+const hash01 = (value) => {
+  const x = Math.sin(value * 12.9898 + 78.233) * 43758.5453123;
+  return x - Math.floor(x);
 };
 
 function randomFrom(list) {
@@ -24,13 +29,14 @@ const DEFAULT_MOVING_PROFILE = {
 
 
 export class Game {
-  constructor({ canvas, audio, ui, onGameOver = null }) {
+  constructor({ canvas, audio, ui, runtimeSettings, onGameOver = null }) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.audio = audio;
     this.ui = ui;
     this.state = GAME_STATES.MENU;
     this.onGameOver = onGameOver;
+    this.runtimeSettings = runtimeSettings;
     this.best = Number(localStorage.getItem(STORAGE_KEYS.bestScore) ?? 0);
     this.playerSprites = {};
     this.environmentSprites = {};
@@ -47,6 +53,18 @@ export class Game {
       worldSeed: this.worldSeed
     });
     this.terrainDebugEnabled = false;
+    this.runtimeLaneLabelsVisible = true;
+    this.runtimeHitboxOpacity = 0.7;
+    this.runtimeRenderScale = { player: 1, car: 1, train: 1 };
+    this.runtimePropDensity = 1;
+    this.runtimeTrafficSpeedMultiplier = 1;
+    this.runtimeRiverDensity = 1;
+    this.runtimeCameraOffsetRows = 3;
+    this.runtimeSuperJumpDistance = GAME_CONFIG.superJump.launchDistance;
+    this.runtimeCoinsPerSuperJump = GAME_CONFIG.coins.coinsNeededForSuperJump;
+    this.runtimeCoinSpawnChance = GAME_CONFIG.coins.spawnChancePerSecond;
+    this.runtimeTrainWarningLead = GAME_CONFIG.trainWarning.leadTime;
+    this.baseConfig = { baseMoveCooldown: GAME_CONFIG.baseMoveCooldown };
     this.missingAssets = new Set();
     this.resize();
     this.loadSprites();
@@ -93,6 +111,13 @@ export class Game {
       tree1: ASSET_MANIFEST.environment.tree1,
       foodCart: ASSET_MANIFEST.environment.foodCart,
       benson1: ASSET_MANIFEST.environment.benson1,
+      portlandOregonSign: ASSET_MANIFEST.environment.portlandOregonSign,
+      sign1: ASSET_MANIFEST.environment.sign1,
+      sign2: ASSET_MANIFEST.environment.sign2,
+      sign3: ASSET_MANIFEST.environment.sign3,
+      sign4: ASSET_MANIFEST.environment.sign4,
+      sign5: ASSET_MANIFEST.environment.sign5,
+      bookstore1: ASSET_MANIFEST.environment.bookstore1,
       coin: ASSET_MANIFEST.collectibles.coin
     };
 
@@ -133,6 +158,7 @@ export class Game {
   }
 
   reset() {
+    this.runtimeSettings?.applyToGame(this);
     this.player = {
       x: Math.floor(GAME_CONFIG.cols / 2),
       fx: Math.floor(GAME_CONFIG.cols / 2),
@@ -170,10 +196,11 @@ export class Game {
     this.attachedPlatformId = null;
     this.laneCache = new Map();
     this.trainWarnings = new Map();
+    this.propRuntime = this.createPropRuntimeState();
     for (let y = -6; y < 80; y += 1) this.ensureLane(y);
     this.ui.updateScore(this.score);
     this.ui.updateBest(this.best);
-    this.ui.updateCoins(this.coinCount, GAME_CONFIG.coins.coinsNeededForSuperJump);
+    this.ui.updateCoins(this.coinCount, this.runtimeCoinsPerSuperJump);
     this.ui.updateSuperJumps(this.superJumps);
   }
 
@@ -215,7 +242,7 @@ export class Game {
     this.player.facing = facingMap[dir] ?? this.player.facing;
 
     const now = performance.now();
-    if (now - this.lastMoveAt < GAME_CONFIG.baseMoveCooldown) return;
+    if (now - this.lastMoveAt < this.baseConfig.baseMoveCooldown) return;
 
     let nx = this.player.x;
     let ny = this.player.y;
@@ -246,7 +273,7 @@ export class Game {
 
   useSuperJump() {
     if (this.state !== GAME_STATES.PLAYING || this.superJumps < 1 || this.superJumpState?.active) return;
-    const distance = GAME_CONFIG.superJump.launchDistance ?? GAME_CONFIG.coins.superJumpDistance;
+    const distance = this.runtimeSuperJumpDistance ?? GAME_CONFIG.superJump.launchDistance ?? GAME_CONFIG.coins.superJumpDistance;
     const targetY = this.player.y + distance;
     const landing = this.findSafeLandingSpot(targetY);
 
@@ -433,8 +460,16 @@ export class Game {
     const sh = image.naturalHeight * (1 - (crop.top ?? 0) - (crop.bottom ?? 0));
     if (sw <= 0 || sh <= 0) return false;
 
-    const drawWidth = targetRect.width * (renderProfile.scaleX ?? 1);
-    const drawHeight = targetRect.height * (renderProfile.scaleY ?? 1);
+    const runtimeScale =
+      renderProfileKey === 'player'
+        ? this.runtimeRenderScale.player
+        : renderProfileKey === 'maxTrain'
+          ? this.runtimeRenderScale.train
+          : ['car1', 'car2', 'car3', 'bike1', 'scooter1'].includes(renderProfileKey)
+            ? this.runtimeRenderScale.car
+            : 1;
+    const drawWidth = targetRect.width * (renderProfile.scaleX ?? 1) * runtimeScale;
+    const drawHeight = targetRect.height * (renderProfile.scaleY ?? 1) * runtimeScale;
     const anchor = renderProfile.anchor ?? 'center';
     const baseX = anchor === 'topleft' ? targetRect.x : targetRect.x + (targetRect.width - drawWidth) / 2;
     const baseY = anchor === 'topleft' ? targetRect.y : targetRect.y + (targetRect.height - drawHeight) / 2;
@@ -468,6 +503,104 @@ export class Game {
     return LANE_DEFINITIONS[laneType] ?? LANE_DEFINITIONS.grass;
   }
 
+  createPropRuntimeState() {
+    const early = GAME_CONFIG.props.earlyLandmarkDistance;
+    const large = GAME_CONFIG.props.largeLandmarkDistance;
+    const earlyLandmarkY = this.player.y + Math.round(randRange(early.min, early.max));
+    const bookstoreY = this.player.y + Math.round(randRange(large.min, large.max));
+    const signs = [...GAME_CONFIG.props.rules.streetSigns.family];
+    for (let i = signs.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(hash01(this.worldSeed + i * 1.27) * (i + 1));
+      [signs[i], signs[j]] = [signs[j], signs[i]];
+    }
+    return {
+      landmarksSpawned: new Set(),
+      earlyLandmarkY,
+      bookstoreY,
+      streetSignBag: signs,
+      lastStreetSign: null
+    };
+  }
+
+  nextStreetSignAsset() {
+    if (!this.propRuntime.streetSignBag.length) {
+      this.propRuntime.streetSignBag = [...GAME_CONFIG.props.rules.streetSigns.family];
+    }
+    let key = this.propRuntime.streetSignBag.shift();
+    if (key === this.propRuntime.lastStreetSign && this.propRuntime.streetSignBag.length > 0) {
+      this.propRuntime.streetSignBag.push(key);
+      key = this.propRuntime.streetSignBag.shift();
+    }
+    this.propRuntime.lastStreetSign = key;
+    return key;
+  }
+
+  createDecorProp(assetKey, lane, options = {}) {
+    const anchor = options.anchor ?? (lane.direction > 0 ? 'right' : 'left');
+    const edgePadding = options.edgePadding ?? 0.28;
+    const x =
+      anchor === 'right'
+        ? GAME_CONFIG.cols - (options.width ?? 0.6) - edgePadding
+        : edgePadding;
+    return {
+      assetKey,
+      x,
+      width: options.width ?? 0.5,
+      height: options.height ?? 0.5,
+      offsetY: options.offsetY ?? 0.5,
+      zIndex: options.zIndex ?? 1
+    };
+  }
+
+  generateLaneProps(lane) {
+    const laneDef = this.getLaneDefinition(lane.type);
+    const props = [];
+    const density = this.runtimePropDensity * GAME_CONFIG.props.laneDecorationDensity;
+    const laneRoll = hash01(this.worldSeed * 0.81 + lane.y * 0.327);
+
+    if (laneDef.key === 'grass' && laneRoll < 0.9 * density) {
+      const treeCount = laneRoll < 0.4 * density ? 2 : 1;
+      for (let i = 0; i < treeCount; i += 1) {
+        const leftSide = (i + Math.floor(lane.seed * 10)) % 2 === 0;
+        props.push(
+          this.createDecorProp('tree1', lane, {
+            anchor: leftSide ? 'left' : 'right',
+            width: GAME_CONFIG.props.render.tree1.width,
+            height: GAME_CONFIG.props.render.tree1.height,
+            offsetY: GAME_CONFIG.props.render.tree1.offsetY,
+            edgePadding: 0.2 + i * 0.3
+          })
+        );
+      }
+    }
+
+    if (laneDef.key === 'road' && laneRoll < 0.42 * density) {
+      const variant = Math.floor(lane.seed * 1000) % 2 === 0 ? 'foodCart' : 'benson1';
+      const profile = GAME_CONFIG.props.render[variant];
+      props.push(this.createDecorProp(variant, lane, { ...profile, edgePadding: 0.2 }));
+    }
+
+    if (['grass', 'road'].includes(laneDef.key) && laneRoll < GAME_CONFIG.props.roadSignSpawnChance * density) {
+      const sign = this.nextStreetSignAsset();
+      const profile = GAME_CONFIG.props.render[sign];
+      props.push(this.createDecorProp(sign, lane, { ...profile, edgePadding: 0.08 + hash01(lane.y) * 0.5, zIndex: 2 }));
+    }
+
+    if (!this.propRuntime.landmarksSpawned.has('portland') && lane.y === this.propRuntime.earlyLandmarkY && ['grass', 'road'].includes(laneDef.key)) {
+      this.propRuntime.landmarksSpawned.add('portland');
+      const profile = GAME_CONFIG.props.render.portlandOregonSign;
+      props.push(this.createDecorProp('portlandOregonSign', lane, { ...profile, anchor: 'left', edgePadding: 0.18, zIndex: 3 }));
+    }
+
+    if (!this.propRuntime.landmarksSpawned.has('bookstore') && lane.y === this.propRuntime.bookstoreY && ['grass', 'road'].includes(laneDef.key)) {
+      this.propRuntime.landmarksSpawned.add('bookstore');
+      const profile = GAME_CONFIG.props.render.bookstore1;
+      props.push(this.createDecorProp('bookstore1', lane, { ...profile, anchor: 'right', edgePadding: 0.05, zIndex: 0 }));
+    }
+
+    return props;
+  }
+
   laneSupportsHazards(lane) {
     return this.getLaneDefinition(lane?.type).allowedHazards.length > 0;
   }
@@ -493,12 +626,16 @@ export class Game {
   ensureLane(y) {
     if (this.laneCache.has(y)) return;
     const lane = this.terrainSystem.createLane(y, this.score);
+    lane.decorProps = this.generateLaneProps(lane);
     if (lane.type === 'water') {
       const platformW = this.getMovingProfile(lane.platformType).render.width;
+      lane.speed *= this.runtimeRiverDensity;
       const maxIntervalByGap = GAME_CONFIG.riverPlatforms.maxGapSeconds - platformW / lane.speed;
       lane.interval = clamp(lane.interval, GAME_CONFIG.riverPlatforms.minInterval, Math.max(GAME_CONFIG.riverPlatforms.minInterval, maxIntervalByGap));
       this.seedWaterLanePlatforms(lane);
     }
+    if (lane.type === 'road') lane.speed *= this.runtimeTrafficSpeedMultiplier;
+    if (lane.type === 'rail') lane.warningLead = this.runtimeTrainWarningLead;
     this.laneCache.set(y, lane);
     this.terrainSystem.updateConnectedContextForLane(y, this.laneCache);
     this.terrainSystem.updateConnectedContextForLane(y - 1, this.laneCache);
@@ -506,7 +643,7 @@ export class Game {
   }
 
   seedWaterLanePlatforms(lane) {
-    const count = GAME_CONFIG.riverPlatforms.minLanePlatformCount;
+    const count = Math.max(1, Math.round(GAME_CONFIG.riverPlatforms.minLanePlatformCount * this.runtimeRiverDensity));
     for (let i = 0; i < count; i += 1) {
       const spacing = i * (GAME_CONFIG.cols / count);
       const x = lane.direction > 0 ? -1.2 + spacing : GAME_CONFIG.cols + 1.2 - spacing;
@@ -605,7 +742,7 @@ export class Game {
     const grant = Math.max(0, Math.floor(Number(amount) || 0));
     if (grant <= 0) return { grantedCoins: 0, superJumpsGranted: 0 };
 
-    const needed = GAME_CONFIG.coins.coinsNeededForSuperJump;
+    const needed = this.runtimeCoinsPerSuperJump;
     const coinPool = this.coinCount + grant;
     const superJumpsGranted = Math.floor(coinPool / needed);
 
@@ -644,7 +781,7 @@ export class Game {
 
     if (this.state !== GAME_STATES.PLAYING) return;
 
-    this.cameraY += (this.player.y - 3 - this.cameraY) * GAME_CONFIG.cameraLerp;
+    this.cameraY += (this.player.y - this.runtimeCameraOffsetRows - this.cameraY) * GAME_CONFIG.cameraLerp;
 
     const stage = this.score / GAME_CONFIG.difficultyRampEvery;
     const difficulty = clamp(1 + stage * 0.06 + Math.sqrt(stage) * 0.05, 1, 2.35);
@@ -677,7 +814,7 @@ export class Game {
     this.coinSpawnTimer += dt;
     if (this.coinSpawnTimer >= 1) {
       this.coinSpawnTimer = 0;
-      if (Math.random() < GAME_CONFIG.coins.spawnChancePerSecond) this.spawnCoin();
+      if (Math.random() < this.runtimeCoinSpawnChance) this.spawnCoin();
     }
 
     for (const hazard of this.hazards) {
@@ -701,6 +838,11 @@ export class Game {
     if (!this.superJumpState?.active) {
       this.handleCollisions(dt);
       this.collectCoinAtPlayer();
+    }
+
+    if (this.player.y < this.cameraY - 4.25) {
+      this.kill(DEATH_CAUSES.TIMEOUT);
+      return;
     }
     if (this.shakeTimer > 0) {
       this.shakeTimer = Math.max(0, this.shakeTimer - dt);
@@ -757,7 +899,7 @@ export class Game {
     this.player.x = clamp(Math.round(this.player.fx), 0, GAME_CONFIG.cols - 1);
 
     if (this.player.fx <= -0.45 || this.player.fx >= GAME_CONFIG.cols - 0.55) {
-      this.kill('You drifted off the floating platform into the river.');
+      this.kill(DEATH_CAUSES.OFF_PLATFORM);
     }
   }
 
@@ -827,7 +969,7 @@ export class Game {
         this.tile
       );
       if (hit) {
-        this.kill(h.type === 'maxTrain' ? 'A MAX train blasted through your lane.' : 'Traffic cut off your route.');
+        this.kill(h.type === 'maxTrain' ? DEATH_CAUSES.TRAIN : DEATH_CAUSES.CAR);
         return;
       }
 
@@ -850,18 +992,19 @@ export class Game {
       const platform = this.findPlatformUnderPoint(this.player.fx + 0.5, this.player.y);
       if (!platform) {
         this.attachedPlatformId = null;
-        this.kill('The Willamette rain runoff swept you away.');
+        this.kill(DEATH_CAUSES.RIVER);
       }
     }
   }
 
-  kill(message) {
+  kill(cause = DEATH_CAUSES.GENERIC, overrideMessage = null) {
     if (this.state !== GAME_STATES.PLAYING) return;
     this.state = GAME_STATES.GAME_OVER;
     this.audio.play('hit');
     this.triggerScreenShake(GAME_CONFIG.effects.deathShake);
     this.spawnBurst('#c56f5c', 26);
-    this.onGameOver?.({ score: this.score, message });
+    const message = overrideMessage ?? getDeathMessage(cause);
+    this.onGameOver?.({ score: this.score, message, cause });
   }
 
   maybeTriggerTrainPassShake(hazard) {
@@ -1193,51 +1336,12 @@ export class Game {
 
   drawProps(lane, y, laneDef = this.getLaneDefinition(lane.type)) {
     const ctx = this.ctx;
-    const seedOffset = Math.floor((lane.seed * 100) % 7);
-
-    if (laneDef.key === 'grass') {
-      const treeSprite = this.environmentSprites.tree1;
-      for (let i = 0; i < 3; i += 1) {
-        const px = (i * 2 + seedOffset) * this.tile * 0.9;
-        if (treeSprite?.complete) {
-          ctx.drawImage(treeSprite, px + 8, y + this.tile * 0.15, this.tile * 0.32, this.tile * 0.44);
-        } else {
-          ctx.fillStyle = '#2c4b36';
-          ctx.beginPath();
-          ctx.moveTo(px + 20, y + this.tile * 0.24);
-          ctx.lineTo(px + 8, y + this.tile * 0.58);
-          ctx.lineTo(px + 32, y + this.tile * 0.58);
-          ctx.closePath();
-          ctx.fill();
-        }
-      }
-      return;
-    }
-
-    const propX = (seedOffset % 4) * this.tile * 2.1 + this.tile * 0.25;
-    if (laneDef.key === 'road') {
-      const variant = Math.floor(lane.seed * 1000) % 2 === 0 ? 'foodCart' : 'benson1';
-      const streetProp = this.environmentSprites[variant];
-      if (streetProp?.complete) {
-        const w = this.tile * (variant === 'benson1' ? 0.5 : 0.46);
-        const h = this.tile * (variant === 'benson1' ? 0.38 : 0.36);
-        ctx.drawImage(streetProp, propX, y + this.tile * 0.54, w, h);
-      } else {
-        ctx.fillStyle = '#7c5235';
-        ctx.fillRect(propX, y + this.tile * 0.65, 36, 20);
-        ctx.fillStyle = '#d8c7a1';
-        ctx.fillRect(propX + 4, y + this.tile * 0.59, 28, 8);
-      }
-    } else if (laneDef.key === 'water') {
-      ctx.fillStyle = '#6b7e8b';
-      ctx.fillRect(propX + 14, y + this.tile * 0.08, 6, 24);
-      ctx.fillStyle = '#d1d5db';
-      ctx.fillRect(propX, y + this.tile * 0.04, 34, 12);
-    } else if (laneDef.key === 'rail') {
-      ctx.fillStyle = '#64564f';
-      ctx.fillRect(propX, y + this.tile * 0.06, 44, 18);
-      ctx.fillStyle = '#d4d4d4';
-      ctx.fillRect(propX + 8, y + this.tile * 0.09, 18, 6);
+    if (!laneDef.allowedProps.length) return;
+    const props = [...(lane.decorProps ?? [])].sort((a, b) => a.zIndex - b.zIndex);
+    for (const prop of props) {
+      const sprite = this.environmentSprites[prop.assetKey];
+      if (!sprite?.complete) continue;
+      ctx.drawImage(sprite, prop.x * this.tile, y + this.tile * prop.offsetY, this.tile * prop.width, this.tile * prop.height);
     }
   }
 
@@ -1450,7 +1554,7 @@ export class Game {
   }
 
   drawTerrainDebug() {
-    if (!this.terrainDebugEnabled) return;
+    if (!this.terrainDebugEnabled || !this.runtimeLaneLabelsVisible) return;
     const ctx = this.ctx;
     const playerRow = this.player.y;
     ctx.save();
@@ -1472,9 +1576,11 @@ export class Game {
 
   drawCollisionDebug() {
     if (!this.collisionSystem.debugEnabled) return;
+    const debugOpacity = this.runtimeHitboxOpacity;
+    const withOpacity = (color, alpha) => color.replace(/0\.\d+\)$/, `${Math.max(0.05, Math.min(1, alpha * debugOpacity))})`);
     // Toggle with the dev key in config (default: C) to visualize broad boxes, mask footprint, and ride zones.
     const entries = [
-      { entity: this.getPlayerCollisionEntity(), type: 'player', orientation: this.player.facing, color: 'rgba(245, 219, 111, 0.7)', showMask: true }
+      { entity: this.getPlayerCollisionEntity(), type: 'player', orientation: this.player.facing, color: withOpacity('rgba(245, 219, 111, 0.7)', 0.7), showMask: true }
     ];
 
     for (const h of this.hazards) {
@@ -1482,18 +1588,23 @@ export class Game {
       entries.push({
         entity: this.getHazardCollisionEntity(h),
         type: profile.collision.type,
-        color: 'rgba(238, 104, 104, 0.7)',
+        color: withOpacity('rgba(238, 104, 104, 0.7)', 0.7),
         swept: true,
         showMask: false
       });
     }
 
     for (const p of this.platforms) {
-      entries.push({ entity: this.getPlatformCollisionEntity(p), type: 'platform', color: p.id === this.attachedPlatformId ? 'rgba(107, 236, 146, 0.9)' : 'rgba(111, 214, 170, 0.7)', showMask: false });
+      entries.push({
+        entity: this.getPlatformCollisionEntity(p),
+        type: 'platform',
+        color: p.id === this.attachedPlatformId ? withOpacity('rgba(107, 236, 146, 0.9)', 0.9) : withOpacity('rgba(111, 214, 170, 0.7)', 0.7),
+        showMask: false
+      });
     }
 
     for (const coin of this.coins) {
-      entries.push({ entity: this.getCoinCollisionEntity(coin), type: 'collectible', color: 'rgba(255, 221, 111, 0.7)', showMask: false });
+      entries.push({ entity: this.getCoinCollisionEntity(coin), type: 'collectible', color: withOpacity('rgba(255, 221, 111, 0.7)', 0.7), showMask: false });
     }
 
     const lane = this.laneCache.get(this.player.y);

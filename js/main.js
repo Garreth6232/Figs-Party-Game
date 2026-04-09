@@ -4,11 +4,13 @@ import { UIController } from './ui.js';
 import { AudioSystem } from './audio.js';
 import { GAME_CONFIG, GAME_STATES, STORAGE_KEYS } from './config.js';
 import { LeaderboardStore } from './leaderboard.js';
+import { RuntimeSettings } from './runtime-settings.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ui = new UIController();
 const audio = new AudioSystem(STORAGE_KEYS.muted);
 const leaderboard = new LeaderboardStore(STORAGE_KEYS.leaderboard);
+const runtimeSettings = new RuntimeSettings(STORAGE_KEYS.localTuning);
 
 let lastGameOver = { score: 0, message: 'Run ended.' };
 let leaderboardReturnScreen = 'menu';
@@ -19,6 +21,7 @@ const game = new Game({
   canvas,
   audio,
   ui,
+  runtimeSettings,
   onGameOver: ({ score, message }) => {
     lastGameOver = { score, message };
     pendingLeaderboardEntry = leaderboard.qualifies(score);
@@ -87,9 +90,23 @@ const syncMuteButton = () => {
 };
 syncMuteButton();
 ui.setDebugHandlers({
-  onHitboxesToggle: (enabled) => game.setCollisionDebug(enabled)
+  onHitboxesToggle: (enabled) => game.setCollisionDebug(enabled),
+  onTuningChange: (key, value) => {
+    runtimeSettings.setValue(key, value);
+    runtimeSettings.applyToGame(game);
+    ui.renderTuningControls(runtimeSettings.getUIModel());
+    ui.setTuningOverrideStatus(runtimeSettings.hasOverrides());
+  },
+  onTuningReset: () => {
+    runtimeSettings.clearAll();
+    runtimeSettings.applyToGame(game);
+    ui.renderTuningControls(runtimeSettings.getUIModel());
+    ui.setTuningOverrideStatus(false);
+  }
 });
 ui.setHitboxes(game.collisionSystem.debugEnabled);
+ui.renderTuningControls(runtimeSettings.getUIModel());
+ui.setTuningOverrideStatus(runtimeSettings.hasOverrides());
 
 muteBtn.addEventListener('click', () => {
   audio.toggleMute();

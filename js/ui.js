@@ -39,6 +39,9 @@ export class UIController {
     this.debugPasswordInput = document.getElementById('debugPasswordInput');
     this.debugAuthError = document.getElementById('debugAuthError');
     this.hitboxesToggle = document.getElementById('debugHitboxesToggle');
+    this.tuningControls = document.getElementById('tuningControls');
+    this.tuningResetBtn = document.getElementById('tuningResetBtn');
+    this.tuningStatusBadge = document.getElementById('tuningStatusBadge');
 
     this.menuLeaderboardBtn = document.getElementById('menuLeaderboardBtn');
     this.gameOverLeaderboardBtn = document.getElementById('gameOverLeaderboardBtn');
@@ -64,6 +67,8 @@ export class UIController {
     this.bestPopTimer = null;
     this.toastTimer = null;
     this.onHitboxesToggle = null;
+    this.onTuningChange = null;
+    this.onTuningReset = null;
     this.onInitialsSubmit = null;
     this.onInitialsSkip = null;
     this.onEnterName = null;
@@ -89,6 +94,7 @@ export class UIController {
     this.hitboxesToggle?.addEventListener('change', () => {
       this.onHitboxesToggle?.(this.hitboxesToggle.checked);
     });
+    this.tuningResetBtn?.addEventListener('click', () => this.onTuningReset?.());
   }
 
   bindLeaderboardControls() {
@@ -151,8 +157,53 @@ export class UIController {
     if (this.hitboxesToggle) this.hitboxesToggle.checked = enabled;
   }
 
-  setDebugHandlers({ onHitboxesToggle } = {}) {
+  setDebugHandlers({ onHitboxesToggle, onTuningChange, onTuningReset } = {}) {
     this.onHitboxesToggle = onHitboxesToggle ?? null;
+    this.onTuningChange = onTuningChange ?? null;
+    this.onTuningReset = onTuningReset ?? null;
+  }
+
+  renderTuningControls(settings) {
+    if (!this.tuningControls) return;
+    this.tuningControls.innerHTML = '';
+    let activeGroup = '';
+
+    settings.forEach((setting) => {
+      if (setting.group !== activeGroup) {
+        const heading = document.createElement('small');
+        heading.textContent = setting.group;
+        this.tuningControls.append(heading);
+        activeGroup = setting.group;
+      }
+
+      const row = document.createElement('label');
+      row.className = 'tuning-row';
+      const valueDisplay = setting.type === 'toggle' ? (setting.value ? 'ON' : 'OFF') : Number(setting.value).toFixed(setting.step >= 1 ? 0 : 2);
+      row.innerHTML = `
+        <div class="tuning-row-head">
+          <span>${setting.label}</span>
+          <strong>${valueDisplay}</strong>
+        </div>
+        ${
+          setting.type === 'toggle'
+            ? `<input type="checkbox" data-setting-key="${setting.key}" ${setting.value ? 'checked' : ''} />`
+            : `<input type="range" data-setting-key="${setting.key}" min="${setting.min}" max="${setting.max}" step="${setting.step}" value="${setting.value}" />`
+        }
+      `;
+
+      const input = row.querySelector('input');
+      input?.addEventListener('input', () => {
+        const value = setting.type === 'toggle' ? input.checked : Number(input.value);
+        this.onTuningChange?.(setting.key, value);
+      });
+      this.tuningControls.append(row);
+    });
+  }
+
+  setTuningOverrideStatus(active) {
+    if (!this.tuningStatusBadge) return;
+    this.tuningStatusBadge.textContent = active ? 'Local Overrides Active' : 'Defaults Active';
+    this.tuningStatusBadge.classList.toggle('active', active);
   }
 
   resetInfoPanels() {
