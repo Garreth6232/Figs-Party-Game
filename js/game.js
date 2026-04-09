@@ -1363,7 +1363,7 @@ export class Game {
     const props = [...(lane.decorProps ?? [])].sort((a, b) => a.zIndex - b.zIndex);
     for (const prop of props) {
       const sprite = this.environmentSprites[prop.assetKey];
-      if (!sprite?.complete) continue;
+      if (!sprite?.complete || sprite.naturalWidth === 0 || sprite.naturalHeight === 0) continue;
       ctx.drawImage(sprite, prop.x * this.tile, y + this.tile * prop.offsetY, this.tile * prop.width, this.tile * prop.height);
     }
   }
