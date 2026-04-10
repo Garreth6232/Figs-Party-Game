@@ -666,9 +666,13 @@ export const GAME_CONFIG = {
     laneCount: 3,
     trafficSpeed: 3.6,
     trafficSpawnInterval: 1.05,
+    trafficActiveUntilExit: true,
+    trafficStopAfterEncounterRows: 0,
     warningText: 'watch out for cars behind you!',
     warningDurationSeconds: 2.4,
-    activationMode: 'onPlayerEntry'
+    activationMode: 'onPlayerEntry',
+    jumpCooldownMultiplier: 1.6,
+    pickleSpawnChanceMultiplier: 2
   },
   trainWarning: {
     leadTime: 1.8,
