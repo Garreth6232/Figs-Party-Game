@@ -198,6 +198,8 @@ export class Game {
     this.attachedPlatformId = null;
     this.laneCache = new Map();
     this.trainWarnings = new Map();
+    this.bridgeEncounters = new Map();
+    this.activeBridgeEncounterId = null;
     this.propRuntime = this.createPropRuntimeState();
     for (let y = -6; y < 80; y += 1) this.ensureLane(y);
     this.ui.updateScore(this.score);
@@ -435,18 +437,19 @@ export class Game {
   }
 
   getMovingCenterX(entity, profile) {
+    if (entity.motionAxis === 'y') return entity.x + (profile.collision.offsetX ?? 0);
     return entity.x + (profile.collision.offsetX ?? 0);
   }
 
-  getMovingCenterY(laneY, profile, mode = 'collision') {
-    const laneScreen = this.worldToScreen(0, laneY).y;
+  getMovingCenterY(entity, profile, mode = 'collision') {
+    const laneScreen = this.worldToScreen(0, entity.y).y;
     const offsetY = profile[mode]?.offsetY ?? 0;
     return laneScreen + this.tile * (0.5 + offsetY);
   }
 
   getMovingDrawRect(entity, profile) {
     const centerX = entity.x + (profile.render.offsetX ?? 0);
-    const centerY = this.getMovingCenterY(entity.y, profile, 'render');
+    const centerY = this.getMovingCenterY(entity, profile, 'render');
     const width = profile.render.width * this.tile;
     const height = profile.render.height * this.tile;
     return { x: centerX * this.tile - width / 2, y: centerY - height / 2, width, height };
@@ -694,6 +697,30 @@ export class Game {
     return this.getLaneDefinition(gameplayType).allowedPlatforms.length > 0;
   }
 
+  getBridgePlayableColumns() {
+    const laneCount = clamp(Math.round(GAME_CONFIG.bridgeEncounter.laneCount), 1, GAME_CONFIG.cols);
+    const start = Math.floor((GAME_CONFIG.cols - laneCount) / 2);
+    return Array.from({ length: laneCount }, (_, index) => start + index);
+  }
+
+  isBridgePlayableColumn(x) {
+    return this.getBridgePlayableColumns().includes(x);
+  }
+
+  getBridgeEncounterState(encounterId) {
+    if (!encounterId) return null;
+    if (!this.bridgeEncounters.has(encounterId)) {
+      this.bridgeEncounters.set(encounterId, {
+        id: encounterId,
+        activated: false,
+        warningShown: false,
+        spawnTimer: 0,
+        lastSpawnLane: null
+      });
+    }
+    return this.bridgeEncounters.get(encounterId);
+  }
+
   isHazardCompatibleWithLane(hazard) {
     const lane = this.laneCache.get(hazard.y);
     if (!lane) return false;
@@ -719,6 +746,7 @@ export class Game {
     }
     if (lane.type === 'road') lane.speed *= this.runtimeTrafficSpeedMultiplier;
     if (lane.type === 'rail') lane.warningLead = this.runtimeTrainWarningLead;
+    if (lane.type === 'bridgeEncounter' && lane.bridgeEncounter?.id) this.getBridgeEncounterState(lane.bridgeEncounter.id);
     this.laneCache.set(y, lane);
     this.terrainSystem.updateConnectedContextForLane(y, this.laneCache);
     this.terrainSystem.updateConnectedContextForLane(y - 1, this.laneCache);
@@ -766,6 +794,36 @@ export class Game {
       h: profile.render.height
     };
     this.hazards.push(h);
+  }
+
+  spawnBridgeHazard(lane, encounterState) {
+    const gameplayType = this.getLaneGameplayType(lane);
+    const laneDef = this.getLaneDefinition(gameplayType);
+    const spawnableHazards = laneDef.allowedHazards.filter((hazardType) => this.laneAllowsEntityType(lane, hazardType, 'hazards'));
+    if (!spawnableHazards.length) return;
+
+    const playableColumns = this.getBridgePlayableColumns();
+    const candidates = playableColumns.filter((col) => col !== encounterState.lastSpawnLane);
+    const spawnColumn = randomFrom(candidates.length ? candidates : playableColumns);
+    const vehicleType = randomFrom(spawnableHazards);
+    const profile = this.getMovingProfile(vehicleType);
+    const spawnY = (lane.bridgeEncounter?.startY ?? lane.y) - 1.1;
+
+    this.hazards.push({
+      id: this.nextHazardId++,
+      type: vehicleType,
+      x: spawnColumn + 0.5,
+      prevX: spawnColumn + 0.5,
+      y: spawnY,
+      prevY: spawnY,
+      dir: 1,
+      speed: lane.speed,
+      motionAxis: 'y',
+      encounterId: lane.bridgeEncounter?.id ?? null,
+      w: profile.render.width,
+      h: profile.render.height
+    });
+    encounterState.lastSpawnLane = spawnColumn;
   }
 
   spawnPlatform(lane) {
@@ -850,6 +908,46 @@ export class Game {
     this.ui.showToast(`Cheat activated: +${GAME_CONFIG.cheats.rewardCoins} pickles`, 'info');
   }
 
+  updateBridgeEncounterActivation() {
+    if (GAME_CONFIG.bridgeEncounter.activationMode !== 'onPlayerEntry') return;
+    const lane = this.laneCache.get(this.player.y);
+    const encounter = lane?.bridgeEncounter;
+    if (!encounter?.id) {
+      this.activeBridgeEncounterId = null;
+      return;
+    }
+
+    const state = this.getBridgeEncounterState(encounter.id);
+    if (!state) return;
+    this.activeBridgeEncounterId = encounter.id;
+    if (state.activated) return;
+
+    state.activated = true;
+    state.spawnTimer = 0;
+    if (!state.warningShown) {
+      this.ui.showToast(GAME_CONFIG.bridgeEncounter.warningText, 'info', GAME_CONFIG.bridgeEncounter.warningDurationSeconds * 1000);
+      state.warningShown = true;
+    }
+  }
+
+  updateBridgeEncounterTraffic(dt, difficulty) {
+    if (!this.activeBridgeEncounterId) return;
+    const lane = this.laneCache.get(this.player.y);
+    if (lane?.type !== 'bridgeEncounter') return;
+
+    const encounterState = this.getBridgeEncounterState(this.activeBridgeEncounterId);
+    if (!encounterState?.activated) return;
+    const spawnLane = this.laneCache.get(lane.bridgeEncounter?.startY ?? lane.y);
+    if (!spawnLane || spawnLane.type !== 'bridgeEncounter') return;
+
+    const interval = Math.max(0.55, GAME_CONFIG.bridgeEncounter.trafficSpawnInterval / difficulty);
+    encounterState.spawnTimer += dt;
+    if (encounterState.spawnTimer >= interval) {
+      encounterState.spawnTimer = 0;
+      this.spawnBridgeHazard(spawnLane, encounterState);
+    }
+  }
+
   update(dt) {
     this.time += dt;
     if (this.superJumpState?.active) {
@@ -871,12 +969,15 @@ export class Game {
 
     if (this.state !== GAME_STATES.PLAYING) return;
 
+    this.updateBridgeEncounterActivation();
+
     this.cameraY += (this.player.y - this.runtimeCameraOffsetRows - this.cameraY) * GAME_CONFIG.cameraLerp;
 
     const stage = this.score / GAME_CONFIG.difficultyRampEvery;
     const difficulty = clamp(1 + stage * 0.06 + Math.sqrt(stage) * 0.05, 1, 2.35);
 
     for (const lane of this.laneCache.values()) {
+      if (lane.type === 'bridgeEncounter') continue;
       if (!this.laneSupportsHazards(lane) && !this.laneSupportsPlatforms(lane)) continue;
       lane.timer += dt;
       let minInterval = 1.1;
@@ -900,6 +1001,7 @@ export class Game {
         else if (this.laneSupportsHazards(lane)) this.spawnHazard(lane);
       }
     }
+    this.updateBridgeEncounterTraffic(dt, difficulty);
 
     this.coinSpawnTimer += dt;
     if (this.coinSpawnTimer >= 1) {
@@ -909,10 +1011,19 @@ export class Game {
 
     for (const hazard of this.hazards) {
       hazard.prevX = hazard.x;
-      hazard.x += hazard.speed * hazard.dir * dt;
+      hazard.prevY = hazard.y;
+      if (hazard.motionAxis === 'y') hazard.y += hazard.speed * hazard.dir * dt;
+      else hazard.x += hazard.speed * hazard.dir * dt;
       this.maybeTriggerTrainPassShake(hazard);
     }
-    this.hazards = this.hazards.filter((h) => this.isHazardCompatibleWithLane(h) && h.x > -5 && h.x < GAME_CONFIG.cols + 5);
+    this.hazards = this.hazards.filter((h) => {
+      if (h.motionAxis === 'y') {
+        const encounterState = h.encounterId ? this.bridgeEncounters.get(h.encounterId) : null;
+        if (encounterState && !encounterState.activated) return false;
+        return h.y > this.player.y - 8 && h.y < this.player.y + 12;
+      }
+      return this.isHazardCompatibleWithLane(h) && h.x > -5 && h.x < GAME_CONFIG.cols + 5;
+    });
 
     for (const platform of this.platforms) {
       platform.prevX = platform.x;
@@ -1012,7 +1123,7 @@ export class Game {
       ...hazard,
       centerX: this.getMovingCenterX(hazard, profile),
       prevCenterX: hazard.prevX + (profile.collision.offsetX ?? 0),
-      centerY: this.getMovingCenterY(hazard.y, profile, 'collision'),
+      centerY: this.getMovingCenterY(hazard, profile, 'collision'),
       w: profile.collision.width,
       h: profile.collision.height
     };
@@ -1024,7 +1135,7 @@ export class Game {
       ...platform,
       centerX: this.getMovingCenterX(platform, profile),
       prevCenterX: platform.prevX + (profile.collision.offsetX ?? 0),
-      centerY: this.getMovingCenterY(platform.y, profile, 'collision'),
+      centerY: this.getMovingCenterY(platform, profile, 'collision'),
       w: profile.collision.width,
       h: profile.collision.height
     };
@@ -1040,9 +1151,16 @@ export class Game {
     if (!lane) return;
 
     const playerEntity = this.getPlayerCollisionEntity();
+    if (lane.type === 'bridgeEncounter' && !this.isBridgePlayableColumn(this.player.x)) {
+      this.kill(DEATH_CAUSES.RIVER);
+      return;
+    }
 
     for (const h of this.hazards) {
-      if (Math.abs(h.y - this.player.y) > 0.25) continue;
+      if (h.motionAxis === 'y') {
+        if (Math.abs(h.x - (this.player.fx + 0.5)) > 0.9) continue;
+        if (Math.abs(h.y - this.player.y) > 1.25) continue;
+      } else if (Math.abs(h.y - this.player.y) > 0.25) continue;
       const hazardEntity = this.getHazardCollisionEntity(h);
       const playerBroad = this.collisionSystem.getAABB(playerEntity, 'player', this.tile);
       const hazardBroad = this.collisionSystem.getAABB(hazardEntity, this.getMovingProfile(h.type).collision.type, this.tile, {
@@ -1304,6 +1422,32 @@ export class Game {
     });
   }
 
+  drawBridgeEncounterLane({ lane, laneY, laneHeight, laneIndex }) {
+    this.drawWaterLane({ lane, laneY, laneHeight, laneIndex });
+    const ctx = this.ctx;
+    const playableColumns = this.getBridgePlayableColumns();
+    const bridgeStartX = playableColumns[0] * this.tile;
+    const bridgeWidth = playableColumns.length * this.tile;
+
+    ctx.fillStyle = 'rgba(122, 100, 75, 0.88)';
+    ctx.fillRect(bridgeStartX, laneY, bridgeWidth, laneHeight);
+    ctx.strokeStyle = 'rgba(74, 54, 38, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(bridgeStartX, laneY + 1, bridgeWidth, laneHeight - 2);
+
+    ctx.strokeStyle = 'rgba(240, 224, 192, 0.42)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 8]);
+    for (let i = 1; i < playableColumns.length; i += 1) {
+      const lineX = bridgeStartX + i * this.tile;
+      ctx.beginPath();
+      ctx.moveTo(lineX, laneY + 2);
+      ctx.lineTo(lineX, laneY + laneHeight - 2);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
   drawRailLane({ lane, laneY, laneHeight, laneIndex }) {
     const ctx = this.ctx;
     const railStyle = GAME_CONFIG.environmentTiles.rail;
@@ -1418,7 +1562,8 @@ export class Game {
         ctx.lineTo(this.worldWidth, laneY + Math.round(laneHeight * 0.56));
         ctx.stroke();
         ctx.setLineDash([]);
-      } else if (lane.terrainType === 'water') this.drawWaterLane({ lane, laneY, laneHeight, laneIndex: y });
+      } else if (lane.type === 'bridgeEncounter') this.drawBridgeEncounterLane({ lane, laneY, laneHeight, laneIndex: y });
+      else if (lane.terrainType === 'water') this.drawWaterLane({ lane, laneY, laneHeight, laneIndex: y });
       else if (lane.terrainType === 'rail') this.drawRailLane({ lane, laneY, laneHeight, laneIndex: y });
       else this.drawGrassLane({ lane, laneY, laneHeight, laneIndex: y });
 
