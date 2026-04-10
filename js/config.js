@@ -656,6 +656,7 @@ export const GAME_CONFIG = {
     { type: 'rail', weight: 1.25 }
   ],
   bridgeEncounter: {
+    firstBridgeMaxDistance: 60,
     rarityPerRegion: 0.075,
     regionSpan: 72,
     startOffsetMin: 10,
@@ -692,7 +693,8 @@ export const GAME_CONFIG = {
   },
   riverPlatforms: {
     hitboxPaddingX: 0.03,
-    kayakLandingCatchPaddingX: 0.04,
+    kayakLandingPadWidthMultiplier: 1.16,
+    kayakLandingPadHeightMultiplier: 1.24,
     laneTypes: ['log1', 'raft1', 'kayak1'],
     minSpeed: 0.85,
     maxSpeed: 1.75,

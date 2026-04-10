@@ -58,9 +58,41 @@ export class TerrainSystem {
     this.config = gameConfig;
     this.laneDefinitions = laneDefinitions;
     this.worldSeed = worldSeed;
+    this.firstBridgeEncounter = this.buildFirstBridgeEncounter();
+  }
+
+  buildFirstBridgeEncounter() {
+    const bridge = this.config.bridgeEncounter;
+    const maxDistance = Math.max(0, Math.floor(bridge.firstBridgeMaxDistance ?? 0));
+    if (maxDistance <= 0) return null;
+
+    const safeRows = this.config.safeZones.guaranteedSafeRows + 1;
+    const minStartY = safeRows + bridge.startOffsetMin;
+    const maxAllowedY = this.config.startY + maxDistance;
+    const maxStartY = Math.max(minStartY, maxAllowedY - bridge.lengthMin + 1);
+    const startSpan = Math.max(0, maxStartY - minStartY);
+    const startRoll = hash01(this.worldSeed * 5.11 + 0.71);
+    const lengthRoll = hash01(this.worldSeed * 6.41 + 1.37);
+    const startY = minStartY + Math.floor(startRoll * (startSpan + 1));
+    const maxLengthByDistance = Math.max(bridge.lengthMin, maxAllowedY - startY + 1);
+    const targetLengthMax = Math.min(bridge.lengthMax, maxLengthByDistance);
+    const length = bridge.lengthMin + Math.floor(lengthRoll * (targetLengthMax - bridge.lengthMin + 1));
+    const endY = startY + length - 1;
+
+    return {
+      id: 'bridge-first-guaranteed',
+      regionIndex: -1,
+      startY,
+      endY,
+      length
+    };
   }
 
   getBridgeEncounterForY(y) {
+    if (this.firstBridgeEncounter && y >= this.firstBridgeEncounter.startY && y <= this.firstBridgeEncounter.endY) {
+      return this.firstBridgeEncounter;
+    }
+
     const bridge = this.config.bridgeEncounter;
     const safeRows = this.config.safeZones.guaranteedSafeRows + 1;
     if (y < safeRows) return null;
