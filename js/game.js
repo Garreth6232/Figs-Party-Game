@@ -716,6 +716,7 @@ export class Game {
         warningShown: false,
         spawnTimer: 0,
         lastSpawnLane: null,
+        minimumPicklesSeeded: false,
         encounter: null
       });
     }
@@ -735,6 +736,23 @@ export class Game {
     if (!encounter) return false;
     const endBoundary = encounter.endY + (GAME_CONFIG.bridgeEncounter.trafficStopAfterEncounterRows ?? 0);
     return this.player.y <= endBoundary;
+  }
+
+  isLaneYVisibleOnScreen(y) {
+    const laneY = this.getLaneScreenY(y);
+    const laneHeight = this.getLaneScreenHeight();
+    return laneY + laneHeight >= 0 && laneY <= this.worldHeight;
+  }
+
+  isBridgeEncounterEndVisible(encounter) {
+    if (!encounter) return false;
+    return this.isLaneYVisibleOnScreen(encounter.endY);
+  }
+
+  shouldStopBridgeTrafficSpawning(encounter) {
+    const stopMode = GAME_CONFIG.bridgeEncounter.trafficStopMode;
+    if (stopMode === 'onBridgeEndVisible') return this.isBridgeEncounterEndVisible(encounter);
+    return !this.isWithinBridgeEncounterBounds(encounter);
   }
 
   getCurrentMoveCooldown() {
@@ -842,7 +860,12 @@ export class Game {
     const spawnColumn = randomFrom(candidates.length ? candidates : playableColumns);
     const vehicleType = randomFrom(spawnableHazards);
     const profile = this.getMovingProfile(vehicleType);
-    const spawnY = (lane.bridgeEncounter?.startY ?? lane.y) - 1.1;
+    const bridgeEncounter = lane.bridgeEncounter;
+    const spawnAtBridgeEnd = GAME_CONFIG.bridgeEncounter.trafficDirection === 'down';
+    const spawnY = spawnAtBridgeEnd
+      ? (bridgeEncounter?.endY ?? lane.y) + 1.1
+      : (bridgeEncounter?.startY ?? lane.y) - 1.1;
+    const spawnDirection = spawnAtBridgeEnd ? -1 : 1;
 
     this.hazards.push({
       id: this.nextHazardId++,
@@ -851,14 +874,61 @@ export class Game {
       prevX: spawnColumn + 0.5,
       y: spawnY,
       prevY: spawnY,
-      dir: 1,
+      dir: spawnDirection,
       speed: lane.speed,
       motionAxis: 'y',
-      encounterId: lane.bridgeEncounter?.id ?? null,
+      encounterId: bridgeEncounter?.id ?? null,
       w: profile.render.width,
       h: profile.render.height
     });
     encounterState.lastSpawnLane = spawnColumn;
+  }
+
+  ensureBridgeEncounterMinimumPickles(encounter, encounterState) {
+    if (!encounter || encounterState?.minimumPicklesSeeded) return;
+    const minPickles = Math.max(0, Math.floor(GAME_CONFIG.bridgeEncounter.minimumPickles ?? 0));
+    if (minPickles <= 0) {
+      if (encounterState) encounterState.minimumPicklesSeeded = true;
+      return;
+    }
+
+    const playableColumns = this.getBridgePlayableColumns();
+    const isBridgeEncounterCoin = (coin) => (
+      coin.y >= encounter.startY &&
+      coin.y <= encounter.endY &&
+      playableColumns.includes(coin.x)
+    );
+    let bridgeCoinCount = this.coins.filter(isBridgeEncounterCoin).length;
+    if (bridgeCoinCount >= minPickles) {
+      if (encounterState) encounterState.minimumPicklesSeeded = true;
+      return;
+    }
+
+    const candidates = [];
+    for (let y = encounter.startY; y <= encounter.endY; y += 1) {
+      this.ensureLane(y);
+      const lane = this.laneCache.get(y);
+      if (lane?.type !== 'bridgeEncounter' || lane.bridgeEncounter?.id !== encounter.id) continue;
+      for (const x of playableColumns) candidates.push({ x, y });
+    }
+
+    const deterministicCandidates = candidates
+      .map((candidate, index) => ({
+        ...candidate,
+        sortKey: hash01((this.worldSeed + encounter.startY * 11 + encounter.endY * 17) + index * 0.618)
+      }))
+      .sort((a, b) => a.sortKey - b.sortKey);
+
+    for (const candidate of deterministicCandidates) {
+      if (bridgeCoinCount >= minPickles) break;
+      const occupied = this.coins.some((coin) => coin.x === candidate.x && Math.abs(coin.y - candidate.y) < 2);
+      if (occupied) continue;
+      const bobSeed = hash01(this.worldSeed + candidate.y * 1.37 + candidate.x * 7.19) * 1000;
+      this.coins.push({ id: this.nextCoinId++, x: candidate.x, y: candidate.y, bobSeed, w: 0.32, h: 0.32 });
+      bridgeCoinCount += 1;
+    }
+
+    if (encounterState) encounterState.minimumPicklesSeeded = true;
   }
 
   spawnPlatform(lane) {
@@ -960,6 +1030,7 @@ export class Game {
       state.activated = true;
       state.spawnTimer = 0;
       state.encounter = encounter;
+      this.ensureBridgeEncounterMinimumPickles(encounter, state);
       if (!state.warningShown) {
         this.ui.showToast(GAME_CONFIG.bridgeEncounter.warningText, 'info', GAME_CONFIG.bridgeEncounter.warningDurationSeconds * 1000);
         state.warningShown = true;
@@ -974,7 +1045,7 @@ export class Game {
       return;
     }
 
-    if (!GAME_CONFIG.bridgeEncounter.trafficActiveUntilExit || !this.isWithinBridgeEncounterBounds(activeState.encounter)) {
+    if (!GAME_CONFIG.bridgeEncounter.trafficActiveUntilExit || this.shouldStopBridgeTrafficSpawning(activeState.encounter)) {
       activeState.activated = false;
       activeState.spawnTimer = 0;
       this.activeBridgeEncounterId = null;
@@ -985,11 +1056,11 @@ export class Game {
     if (!this.activeBridgeEncounterId) return;
     const encounterState = this.getBridgeEncounterState(this.activeBridgeEncounterId);
     if (!encounterState?.activated) return;
-    if (!this.isWithinBridgeEncounterBounds(encounterState.encounter)) return;
+    if (this.shouldStopBridgeTrafficSpawning(encounterState.encounter)) return;
     const spawnLane = this.laneCache.get(encounterState.encounter?.startY);
     if (!spawnLane || spawnLane.type !== 'bridgeEncounter') return;
 
-    const interval = Math.max(0.55, GAME_CONFIG.bridgeEncounter.trafficSpawnInterval / difficulty);
+    const interval = Math.max(0.55, spawnLane.interval / difficulty);
     encounterState.spawnTimer += dt;
     if (encounterState.spawnTimer >= interval) {
       encounterState.spawnTimer = 0;
@@ -1068,8 +1139,9 @@ export class Game {
     this.hazards = this.hazards.filter((h) => {
       if (h.motionAxis === 'y') {
         const encounterState = h.encounterId ? this.bridgeEncounters.get(h.encounterId) : null;
-        if (encounterState && !encounterState.activated) return false;
-        return h.y > this.player.y - 8 && h.y < this.player.y + 12;
+        const encounter = encounterState?.encounter;
+        if (!encounter) return false;
+        return h.y >= encounter.startY - 2 && h.y <= encounter.endY + 2;
       }
       return this.isHazardCompatibleWithLane(h) && h.x > -5 && h.x < GAME_CONFIG.cols + 5;
     });
