@@ -13,7 +13,7 @@ export const GAME_STATES = {
 };
 
 export const LEADERBOARD_LIMIT = 10;
-export const STANDARD_ROAD_VEHICLE_KEYS = ['car1', 'car2', 'car3', 'bike1', 'scooter1'];
+export const STANDARD_ROAD_VEHICLE_KEYS = ['car1', 'car2', 'car3', 'scooter1'];
 
 const MOVING_ENTITY_TUNING = Object.freeze({
   trainRenderScale: 1.5,
@@ -447,7 +447,7 @@ export const LANE_DEFINITIONS = Object.freeze({
     renderMode: 'road',
     fallbackColor: '#505962',
     allowedProps: ['foodCart', 'benson1'],
-    allowedHazards: ['car1', 'car2', 'car3', 'scooter1', 'bike1'],
+    allowedHazards: ['car1', 'car2', 'car3', 'scooter1'],
     allowedPlatforms: [],
     allowsCoins: false,
     trainWarning: false
@@ -475,6 +475,22 @@ export const LANE_DEFINITIONS = Object.freeze({
     allowedPlatforms: [],
     allowsCoins: false,
     trainWarning: true
+  })
+});
+
+export const ENTITY_LANE_RULES = Object.freeze({
+  hazards: Object.freeze({
+    car1: Object.freeze(['road']),
+    car2: Object.freeze(['road']),
+    car3: Object.freeze(['road']),
+    scooter1: Object.freeze(['road']),
+    bike1: Object.freeze(['road']),
+    maxTrain: Object.freeze(['rail'])
+  }),
+  platforms: Object.freeze({
+    log1: Object.freeze(['water']),
+    raft1: Object.freeze(['water']),
+    kayak1: Object.freeze(['water'])
   })
 });
 
@@ -649,6 +665,7 @@ export const GAME_CONFIG = {
   },
   riverPlatforms: {
     hitboxPaddingX: 0.03,
+    kayakLandingCatchPaddingX: 0.04,
     laneTypes: ['log1', 'raft1', 'kayak1'],
     minSpeed: 0.85,
     maxSpeed: 1.75,

@@ -1,4 +1,4 @@
-import { ASSET_MANIFEST, GAME_CONFIG, GAME_STATES, LANE_DEFINITIONS, STANDARD_ROAD_VEHICLE_ASSET_KEY, STORAGE_KEYS } from './config.js';
+import { ASSET_MANIFEST, ENTITY_LANE_RULES, GAME_CONFIG, GAME_STATES, LANE_DEFINITIONS, STORAGE_KEYS } from './config.js';
 import { CollisionSystem } from './collision.js';
 import { TerrainSystem } from './terrain-system.js';
 import { DEATH_CAUSES, getDeathMessage } from './death-messages.js';
@@ -505,6 +505,24 @@ export class Game {
     return LANE_DEFINITIONS[laneType] ?? LANE_DEFINITIONS.grass;
   }
 
+  getLaneGameplayType(lane) {
+    if (!lane) return 'grass';
+    return lane.gameplayType ?? lane.type ?? 'grass';
+  }
+
+  laneAllowsEntityType(lane, entityType, entityKind) {
+    if (!lane || !entityType || !entityKind) return false;
+    const gameplayType = this.getLaneGameplayType(lane);
+    const laneDef = this.getLaneDefinition(gameplayType);
+    const allowedByLaneDefinition = entityKind === 'hazards'
+      ? laneDef.allowedHazards.includes(entityType)
+      : laneDef.allowedPlatforms.includes(entityType);
+    if (!allowedByLaneDefinition) return false;
+    const allowedLaneTypes = ENTITY_LANE_RULES[entityKind]?.[entityType];
+    if (!allowedLaneTypes) return false;
+    return allowedLaneTypes.includes(gameplayType);
+  }
+
   createPropRuntimeState() {
     const early = GAME_CONFIG.props.earlyLandmarkDistance;
     const large = GAME_CONFIG.props.largeLandmarkDistance;
@@ -667,25 +685,25 @@ export class Game {
   }
 
   laneSupportsHazards(lane) {
-    return this.getLaneDefinition(lane?.type).allowedHazards.length > 0;
+    const gameplayType = this.getLaneGameplayType(lane);
+    return this.getLaneDefinition(gameplayType).allowedHazards.length > 0;
   }
 
   laneSupportsPlatforms(lane) {
-    return this.getLaneDefinition(lane?.type).allowedPlatforms.length > 0;
+    const gameplayType = this.getLaneGameplayType(lane);
+    return this.getLaneDefinition(gameplayType).allowedPlatforms.length > 0;
   }
 
   isHazardCompatibleWithLane(hazard) {
     const lane = this.laneCache.get(hazard.y);
     if (!lane) return false;
-    const laneDef = this.getLaneDefinition(lane.type);
-    return laneDef.allowedHazards.includes(hazard.type);
+    return this.laneAllowsEntityType(lane, hazard.type, 'hazards');
   }
 
   isPlatformCompatibleWithLane(platform) {
     const lane = this.laneCache.get(platform.y);
     if (!lane) return false;
-    const laneDef = this.getLaneDefinition(lane.type);
-    return laneDef.allowedPlatforms.includes(platform.type);
+    return this.laneAllowsEntityType(lane, platform.type, 'platforms');
   }
 
   ensureLane(y) {
@@ -728,10 +746,13 @@ export class Game {
   }
 
   spawnHazard(lane) {
-    const laneDef = this.getLaneDefinition(lane?.type);
+    const gameplayType = this.getLaneGameplayType(lane);
+    const laneDef = this.getLaneDefinition(gameplayType);
     if (laneDef.allowedHazards.length === 0) return;
     const startX = lane.direction > 0 ? -1.4 : GAME_CONFIG.cols + 1.4;
-    const vehicleType = randomFrom(laneDef.allowedHazards);
+    const spawnableHazards = laneDef.allowedHazards.filter((hazardType) => this.laneAllowsEntityType(lane, hazardType, 'hazards'));
+    if (spawnableHazards.length === 0) return;
+    const vehicleType = randomFrom(spawnableHazards);
     const profile = this.getMovingProfile(vehicleType);
     const h = {
       id: this.nextHazardId++,
@@ -748,9 +769,13 @@ export class Game {
   }
 
   spawnPlatform(lane) {
-    const laneDef = this.getLaneDefinition(lane?.type);
+    const gameplayType = this.getLaneGameplayType(lane);
+    const laneDef = this.getLaneDefinition(gameplayType);
     if (laneDef.allowedPlatforms.length === 0) return;
-    const platformType = lane.platformType ?? randomFrom(laneDef.allowedPlatforms);
+    const spawnablePlatforms = laneDef.allowedPlatforms.filter((platformType) => this.laneAllowsEntityType(lane, platformType, 'platforms'));
+    if (spawnablePlatforms.length === 0) return;
+    const lanePlatformType = lane.platformType ?? randomFrom(spawnablePlatforms);
+    const platformType = this.laneAllowsEntityType(lane, lanePlatformType, 'platforms') ? lanePlatformType : randomFrom(spawnablePlatforms);
     const startX = lane.direction > 0 ? -1.2 : GAME_CONFIG.cols + 1.2;
     const profile = this.getMovingProfile(platformType);
     this.platforms.push({
@@ -933,9 +958,10 @@ export class Game {
       if (platform.y !== y) return false;
       const entity = this.getPlatformCollisionEntity(platform);
       const broad = this.collisionSystem.getAABB(entity, 'platform', this.tile);
+      const extraCatchPx = platform.type === 'kayak1' ? this.tile * GAME_CONFIG.riverPlatforms.kayakLandingCatchPaddingX : 0;
       const laneScreen = this.worldToScreen(0, y).y;
       const playerCenterY = laneScreen + this.tile * 0.5;
-      return x * this.tile >= broad.left && x * this.tile <= broad.right && playerCenterY >= broad.top && playerCenterY <= broad.bottom;
+      return x * this.tile >= broad.left - extraCatchPx && x * this.tile <= broad.right + extraCatchPx && playerCenterY >= broad.top && playerCenterY <= broad.bottom;
     });
   }
 
@@ -1447,7 +1473,7 @@ export class Game {
       const profile = this.getMovingProfile(h.type);
       const { x, y, width, height } = this.getMovingDrawRect(h, profile);
 
-      const spriteKey = h.type === 'maxTrain' ? 'maxTrain' : STANDARD_ROAD_VEHICLE_ASSET_KEY;
+      const spriteKey = h.type === 'maxTrain' ? 'maxTrain' : h.type;
       const sprite = this.vehicleSprites[spriteKey];
       if (this.drawSpriteWithRenderProfile(sprite, { x, y, width, height }, spriteKey)) {
         // image path drawn
