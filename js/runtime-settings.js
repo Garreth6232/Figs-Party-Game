@@ -40,7 +40,7 @@ const SETTING_DEFINITIONS = {
     }
   },
   superJumpCoinCost: {
-    label: 'Super Jump Coin Cost',
+    label: 'Super Jump Pickle Cost',
     group: 'Player / Movement',
     type: 'range',
     min: 2,
@@ -54,7 +54,7 @@ const SETTING_DEFINITIONS = {
     }
   },
   coinSpawnChance: {
-    label: 'Coin Spawn Chance/s',
+    label: 'Pickle Spawn Chance/s',
     group: 'Spawn / Difficulty',
     type: 'range',
     min: 0.2,

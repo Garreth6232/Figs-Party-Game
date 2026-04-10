@@ -822,7 +822,7 @@ export class Game {
   activateCheatCoins() {
     if (this.state !== GAME_STATES.PLAYING) return;
     this.addCoins(GAME_CONFIG.cheats.rewardCoins);
-    this.ui.showToast(`Cheat activated: +${GAME_CONFIG.cheats.rewardCoins} coins`, 'info');
+    this.ui.showToast(`Cheat activated: +${GAME_CONFIG.cheats.rewardCoins} pickles`, 'info');
   }
 
   update(dt) {
