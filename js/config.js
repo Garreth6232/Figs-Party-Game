@@ -656,7 +656,7 @@ export const GAME_CONFIG = {
     { type: 'rail', weight: 1.25 }
   ],
   bridgeEncounter: {
-    firstBridgeMaxDistance: 60,
+    firstBridgeMaxDistance: 70,
     rarityPerRegion: 0.075,
     regionSpan: 72,
     startOffsetMin: 10,
@@ -664,6 +664,10 @@ export const GAME_CONFIG = {
     lengthMin: 30,
     lengthMax: 40,
     laneCount: 3,
+    trafficDirection: 'down',
+    trafficStopMode: 'onBridgeEndVisible',
+    trafficSpawnRateMultiplier: 1.25,
+    trafficSpeedMultiplier: 1.1,
     trafficSpeed: 3.6,
     trafficSpawnInterval: 1.05,
     trafficActiveUntilExit: true,
@@ -672,7 +676,8 @@ export const GAME_CONFIG = {
     warningDurationSeconds: 2.4,
     activationMode: 'onPlayerEntry',
     jumpCooldownMultiplier: 1.6,
-    pickleSpawnChanceMultiplier: 2
+    pickleSpawnChanceMultiplier: 2,
+    minimumPickles: 5
   },
   trainWarning: {
     leadTime: 1.8,

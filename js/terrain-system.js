@@ -181,9 +181,12 @@ export class TerrainSystem {
       lane.warningLead = this.config.trainWarning.leadTime;
     } else if (gameplayType === 'bridgeEncounter') {
       const encounter = this.getBridgeEncounterForY(y);
-      lane.direction = 1;
-      lane.speed = this.config.bridgeEncounter.trafficSpeed;
-      lane.interval = this.config.bridgeEncounter.trafficSpawnInterval;
+      const bridgeTrafficDirection = this.config.bridgeEncounter.trafficDirection === 'down' ? -1 : 1;
+      const bridgeSpawnMultiplier = Math.max(0.1, this.config.bridgeEncounter.trafficSpawnRateMultiplier ?? 1);
+      const bridgeSpeedMultiplier = Math.max(0.1, this.config.bridgeEncounter.trafficSpeedMultiplier ?? 1);
+      lane.direction = bridgeTrafficDirection;
+      lane.speed = this.config.bridgeEncounter.trafficSpeed * bridgeSpeedMultiplier;
+      lane.interval = this.config.bridgeEncounter.trafficSpawnInterval / bridgeSpawnMultiplier;
       lane.bridgeEncounter = encounter;
       lane.bridgeLaneCount = this.config.bridgeEncounter.laneCount;
     }
