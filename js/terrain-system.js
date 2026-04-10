@@ -43,6 +43,13 @@ export const TERRAIN_VISUAL_RULES = Object.freeze({
     hazardFamily: 'max',
     overlayFamily: 'trainWarning',
     supportsProps: true
+  }),
+  bridgeEncounter: Object.freeze({
+    terrainType: 'water',
+    connectedFamily: 'water',
+    hazardFamily: 'traffic',
+    overlayFamily: 'bridgeTraffic',
+    supportsProps: false
   })
 });
 
@@ -53,7 +60,34 @@ export class TerrainSystem {
     this.worldSeed = worldSeed;
   }
 
+  getBridgeEncounterForY(y) {
+    const bridge = this.config.bridgeEncounter;
+    const safeRows = this.config.safeZones.guaranteedSafeRows + 1;
+    if (y < safeRows) return null;
+    const regionIndex = Math.floor((y - safeRows) / bridge.regionSpan);
+    const regionStartY = safeRows + regionIndex * bridge.regionSpan;
+    const regionRoll = hash01(this.worldSeed * 0.917 + regionIndex * 2.173);
+    if (regionRoll > bridge.rarityPerRegion) return null;
+
+    const startRoll = hash01(this.worldSeed * 1.41 + regionIndex * 3.19);
+    const lengthRoll = hash01(this.worldSeed * 2.07 + regionIndex * 4.71);
+    const startOffset = Math.floor(bridge.startOffsetMin + startRoll * (bridge.startOffsetMax - bridge.startOffsetMin + 1));
+    const length = Math.floor(bridge.lengthMin + lengthRoll * (bridge.lengthMax - bridge.lengthMin + 1));
+    const startY = regionStartY + startOffset;
+    const endY = startY + length - 1;
+    if (y < startY || y > endY) return null;
+
+    return {
+      id: `bridge-${regionIndex}`,
+      regionIndex,
+      startY,
+      endY,
+      length
+    };
+  }
+
   laneTypeForY(y) {
+    if (this.getBridgeEncounterForY(y)) return 'bridgeEncounter';
     if (y <= this.config.safeZones.guaranteedSafeRows) return 'grass';
     const safeRows = this.config.safeZones.guaranteedSafeRows + 1;
     const zoneSpan = 3;
@@ -113,6 +147,13 @@ export class TerrainSystem {
       lane.speed += score * this.config.railHazard.scoreScale;
       lane.interval = this.config.railHazard.minInterval + hash01(y * 0.83 + this.worldSeed * 2.2) * (this.config.railHazard.maxInterval - this.config.railHazard.minInterval);
       lane.warningLead = this.config.trainWarning.leadTime;
+    } else if (gameplayType === 'bridgeEncounter') {
+      const encounter = this.getBridgeEncounterForY(y);
+      lane.direction = 1;
+      lane.speed = this.config.bridgeEncounter.trafficSpeed;
+      lane.interval = this.config.bridgeEncounter.trafficSpawnInterval;
+      lane.bridgeEncounter = encounter;
+      lane.bridgeLaneCount = this.config.bridgeEncounter.laneCount;
     }
 
     return lane;

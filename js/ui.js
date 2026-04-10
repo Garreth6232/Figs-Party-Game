@@ -391,13 +391,13 @@ export class UIController {
     this.superJumpCard.classList.toggle('charged', count > 0);
   }
 
-  showToast(message, variant = 'info') {
+  showToast(message, variant = 'info', durationMs = 1200) {
     if (!this.toastEl) return;
     this.toastEl.textContent = message;
     this.toastEl.dataset.variant = variant;
     this.toastEl.classList.add('show');
     clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => this.toastEl.classList.remove('show'), 1200);
+    this.toastTimer = setTimeout(() => this.toastEl.classList.remove('show'), durationMs);
   }
 
   hideAllOverlays() {

@@ -476,14 +476,26 @@ export const LANE_DEFINITIONS = Object.freeze({
     allowedPlatforms: [],
     allowsCoins: false,
     trainWarning: true
+  }),
+  bridgeEncounter: Object.freeze({
+    key: 'bridgeEncounter',
+    category: 'encounter',
+    surface: 'riverTile',
+    renderMode: 'bridgeEncounter',
+    fallbackColor: '#34576d',
+    allowedProps: [],
+    allowedHazards: ['car1', 'car2', 'car3'],
+    allowedPlatforms: [],
+    allowsCoins: false,
+    trainWarning: false
   })
 });
 
 export const ENTITY_LANE_RULES = Object.freeze({
   hazards: Object.freeze({
-    car1: Object.freeze(['road']),
-    car2: Object.freeze(['road']),
-    car3: Object.freeze(['road']),
+    car1: Object.freeze(['road', 'bridgeEncounter']),
+    car2: Object.freeze(['road', 'bridgeEncounter']),
+    car3: Object.freeze(['road', 'bridgeEncounter']),
     scooter1: Object.freeze(['road']),
     bike1: Object.freeze(['road']),
     maxTrain: Object.freeze(['rail'])
@@ -643,6 +655,20 @@ export const GAME_CONFIG = {
     { type: 'water', weight: 2.0 },
     { type: 'rail', weight: 1.25 }
   ],
+  bridgeEncounter: {
+    rarityPerRegion: 0.075,
+    regionSpan: 72,
+    startOffsetMin: 10,
+    startOffsetMax: 20,
+    lengthMin: 30,
+    lengthMax: 40,
+    laneCount: 3,
+    trafficSpeed: 3.6,
+    trafficSpawnInterval: 1.05,
+    warningText: 'watch out for cars behind you!',
+    warningDurationSeconds: 2.4,
+    activationMode: 'onPlayerEntry'
+  },
   trainWarning: {
     leadTime: 1.8,
     flashHz: 4.5
