@@ -1,6 +1,6 @@
 # Fig Game
 
-A polished endless arcade lane-dodger browser game with a rainy city visual style.
+a game where you play as my cat, Fig
 
 ## Architecture and file structure
 
