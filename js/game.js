@@ -1377,6 +1377,7 @@ export class Game {
     const ctx = this.ctx;
     const from = Math.floor(this.cameraY) - 2;
     const to = from + GAME_CONFIG.visibleRows + 5;
+    const propsToRender = [];
 
     for (let y = from; y <= to; y += 1) {
       this.ensureLane(y);
@@ -1421,18 +1422,36 @@ export class Game {
       else if (lane.terrainType === 'rail') this.drawRailLane({ lane, laneY, laneHeight, laneIndex: y });
       else this.drawGrassLane({ lane, laneY, laneHeight, laneIndex: y });
 
-      this.drawProps(lane, laneY, laneDef);
+      this.collectLanePropsForRender(lane, laneY, laneDef, propsToRender);
     }
+
+    this.drawCollectedProps(propsToRender);
   }
 
-  drawProps(lane, y, laneDef = this.getLaneDefinition(lane.type)) {
-    const ctx = this.ctx;
+  collectLanePropsForRender(lane, y, laneDef = this.getLaneDefinition(lane.type), propsToRender = []) {
     if (!laneDef.allowedProps.length) return;
     const props = [...(lane.decorProps ?? [])].sort((a, b) => a.zIndex - b.zIndex);
     for (const prop of props) {
       const sprite = this.environmentSprites[prop.assetKey];
       if (!sprite?.complete || sprite.naturalWidth === 0 || sprite.naturalHeight === 0) continue;
-      ctx.drawImage(sprite, prop.x * this.tile, y + this.tile * prop.offsetY, this.tile * prop.width, this.tile * prop.height);
+      propsToRender.push({
+        sprite,
+        x: prop.x * this.tile,
+        y: y + this.tile * prop.offsetY,
+        width: this.tile * prop.width,
+        height: this.tile * prop.height,
+        zIndex: prop.zIndex ?? 1,
+        laneY: lane.y
+      });
+    }
+  }
+
+  drawCollectedProps(propsToRender = []) {
+    if (!propsToRender.length) return;
+    const ctx = this.ctx;
+    propsToRender.sort((a, b) => (a.laneY - b.laneY) || (a.zIndex - b.zIndex));
+    for (const prop of propsToRender) {
+      ctx.drawImage(prop.sprite, prop.x, prop.y, prop.width, prop.height);
     }
   }
 

@@ -24,7 +24,8 @@ const MOVING_ENTITY_TUNING = Object.freeze({
 
 const PROP_RENDER_TUNING = Object.freeze({
   streetSignRenderScale: 2,
-  portlandOregonSignRenderScale: 1.5
+  portlandOregonSignRenderScale: 1.5,
+  powellsOnBurnsideRenderScale: 3
 });
 
 const scaleRenderProfile = (profile, scale) => ({
@@ -514,7 +515,7 @@ export const GAME_CONFIG = {
     collisionOverlay: false,
     keyToggle: 'KeyC',
     terrainDebugKeyToggle: 'KeyV',
-    password: '123'
+    password: '1234'
   },
   alignment: {
     player: { renderOffsetY: 0.0, collisionOffsetY: 0.0 },
@@ -788,6 +789,15 @@ GAME_CONFIG.props.render.portlandOregonSign = scalePropRenderProfile(
   GAME_CONFIG.props.render.portlandOregonSign,
   PROP_RENDER_TUNING.portlandOregonSignRenderScale
 );
+GAME_CONFIG.props.render.bookstore1 = (() => {
+  const profile = GAME_CONFIG.props.render.bookstore1;
+  const scaled = scalePropRenderProfile(profile, PROP_RENDER_TUNING.powellsOnBurnsideRenderScale);
+  const originalBottomY = profile.offsetY + profile.height;
+  return {
+    ...scaled,
+    offsetY: originalBottomY - scaled.height
+  };
+})();
 
 for (const signKey of GAME_CONFIG.props.rules.streetSigns.family) {
   const profile = GAME_CONFIG.props.render[signKey];
