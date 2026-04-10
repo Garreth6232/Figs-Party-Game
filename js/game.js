@@ -246,7 +246,7 @@ export class Game {
     this.player.facing = facingMap[dir] ?? this.player.facing;
 
     const now = performance.now();
-    if (now - this.lastMoveAt < this.baseConfig.baseMoveCooldown) return;
+    if (now - this.lastMoveAt < this.getCurrentMoveCooldown()) return;
 
     let nx = this.player.x;
     let ny = this.player.y;
@@ -715,10 +715,42 @@ export class Game {
         activated: false,
         warningShown: false,
         spawnTimer: 0,
-        lastSpawnLane: null
+        lastSpawnLane: null,
+        encounter: null
       });
     }
     return this.bridgeEncounters.get(encounterId);
+  }
+
+  getBridgeEncounterStateByPlayerLane() {
+    const lane = this.laneCache.get(this.player.y);
+    const encounter = lane?.bridgeEncounter;
+    if (!encounter?.id) return { lane: null, encounter: null, state: null };
+    const state = this.getBridgeEncounterState(encounter.id);
+    if (state && !state.encounter) state.encounter = encounter;
+    return { lane, encounter, state };
+  }
+
+  isWithinBridgeEncounterBounds(encounter) {
+    if (!encounter) return false;
+    const endBoundary = encounter.endY + (GAME_CONFIG.bridgeEncounter.trafficStopAfterEncounterRows ?? 0);
+    return this.player.y <= endBoundary;
+  }
+
+  getCurrentMoveCooldown() {
+    const { lane } = this.getBridgeEncounterStateByPlayerLane();
+    const bridgeMultiplier = lane?.type === 'bridgeEncounter'
+      ? GAME_CONFIG.bridgeEncounter.jumpCooldownMultiplier ?? 1
+      : 1;
+    return this.baseConfig.baseMoveCooldown * bridgeMultiplier;
+  }
+
+  getCurrentPickleSpawnChancePerSecond() {
+    const { lane } = this.getBridgeEncounterStateByPlayerLane();
+    const bridgeMultiplier = lane?.type === 'bridgeEncounter'
+      ? GAME_CONFIG.bridgeEncounter.pickleSpawnChanceMultiplier ?? 1
+      : 1;
+    return Math.min(1, this.runtimeCoinSpawnChance * bridgeMultiplier);
   }
 
   isHazardCompatibleWithLane(hazard) {
@@ -746,7 +778,10 @@ export class Game {
     }
     if (lane.type === 'road') lane.speed *= this.runtimeTrafficSpeedMultiplier;
     if (lane.type === 'rail') lane.warningLead = this.runtimeTrainWarningLead;
-    if (lane.type === 'bridgeEncounter' && lane.bridgeEncounter?.id) this.getBridgeEncounterState(lane.bridgeEncounter.id);
+    if (lane.type === 'bridgeEncounter' && lane.bridgeEncounter?.id) {
+      const encounterState = this.getBridgeEncounterState(lane.bridgeEncounter.id);
+      if (encounterState && !encounterState.encounter) encounterState.encounter = lane.bridgeEncounter;
+    }
     this.laneCache.set(y, lane);
     this.terrainSystem.updateConnectedContextForLane(y, this.laneCache);
     this.terrainSystem.updateConnectedContextForLane(y - 1, this.laneCache);
@@ -851,14 +886,20 @@ export class Game {
 
   spawnCoin() {
     if (this.coins.length >= GAME_CONFIG.coins.maxActive) return;
+    const playerOnBridge = this.getBridgeEncounterStateByPlayerLane().lane?.type === 'bridgeEncounter';
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const y = this.player.y + Math.floor(randRange(GAME_CONFIG.coins.spawnAheadMin, GAME_CONFIG.coins.spawnAheadMax));
       this.ensureLane(y);
       const lane = this.laneCache.get(y);
-      if (!lane || !this.getLaneDefinition(lane.type).allowsCoins) continue;
+      if (!lane) continue;
+      const laneAllowsCoins = this.getLaneDefinition(lane.type).allowsCoins;
+      const bridgeAllowsCoins = playerOnBridge && lane.type === 'bridgeEncounter';
+      if (!laneAllowsCoins && !bridgeAllowsCoins) continue;
 
-      const x = Math.floor(randRange(0, GAME_CONFIG.cols));
+      const x = bridgeAllowsCoins
+        ? randomFrom(this.getBridgePlayableColumns())
+        : Math.floor(randRange(0, GAME_CONFIG.cols));
       const occupied = this.coins.some((coin) => coin.x === x && Math.abs(coin.y - y) < 2);
       if (occupied) continue;
 
@@ -910,34 +951,42 @@ export class Game {
 
   updateBridgeEncounterActivation() {
     if (GAME_CONFIG.bridgeEncounter.activationMode !== 'onPlayerEntry') return;
-    const lane = this.laneCache.get(this.player.y);
-    const encounter = lane?.bridgeEncounter;
-    if (!encounter?.id) {
+    const { encounter, state } = this.getBridgeEncounterStateByPlayerLane();
+    if (encounter?.id) {
+      if (!state) return;
+      this.activeBridgeEncounterId = encounter.id;
+      if (state.activated) return;
+
+      state.activated = true;
+      state.spawnTimer = 0;
+      state.encounter = encounter;
+      if (!state.warningShown) {
+        this.ui.showToast(GAME_CONFIG.bridgeEncounter.warningText, 'info', GAME_CONFIG.bridgeEncounter.warningDurationSeconds * 1000);
+        state.warningShown = true;
+      }
+      return;
+    }
+
+    if (!this.activeBridgeEncounterId) return;
+    const activeState = this.getBridgeEncounterState(this.activeBridgeEncounterId);
+    if (!activeState) {
       this.activeBridgeEncounterId = null;
       return;
     }
 
-    const state = this.getBridgeEncounterState(encounter.id);
-    if (!state) return;
-    this.activeBridgeEncounterId = encounter.id;
-    if (state.activated) return;
-
-    state.activated = true;
-    state.spawnTimer = 0;
-    if (!state.warningShown) {
-      this.ui.showToast(GAME_CONFIG.bridgeEncounter.warningText, 'info', GAME_CONFIG.bridgeEncounter.warningDurationSeconds * 1000);
-      state.warningShown = true;
+    if (!GAME_CONFIG.bridgeEncounter.trafficActiveUntilExit || !this.isWithinBridgeEncounterBounds(activeState.encounter)) {
+      activeState.activated = false;
+      activeState.spawnTimer = 0;
+      this.activeBridgeEncounterId = null;
     }
   }
 
   updateBridgeEncounterTraffic(dt, difficulty) {
     if (!this.activeBridgeEncounterId) return;
-    const lane = this.laneCache.get(this.player.y);
-    if (lane?.type !== 'bridgeEncounter') return;
-
     const encounterState = this.getBridgeEncounterState(this.activeBridgeEncounterId);
     if (!encounterState?.activated) return;
-    const spawnLane = this.laneCache.get(lane.bridgeEncounter?.startY ?? lane.y);
+    if (!this.isWithinBridgeEncounterBounds(encounterState.encounter)) return;
+    const spawnLane = this.laneCache.get(encounterState.encounter?.startY);
     if (!spawnLane || spawnLane.type !== 'bridgeEncounter') return;
 
     const interval = Math.max(0.55, GAME_CONFIG.bridgeEncounter.trafficSpawnInterval / difficulty);
@@ -1006,7 +1055,7 @@ export class Game {
     this.coinSpawnTimer += dt;
     if (this.coinSpawnTimer >= 1) {
       this.coinSpawnTimer = 0;
-      if (Math.random() < this.runtimeCoinSpawnChance) this.spawnCoin();
+      if (Math.random() < this.getCurrentPickleSpawnChancePerSecond()) this.spawnCoin();
     }
 
     for (const hazard of this.hazards) {
