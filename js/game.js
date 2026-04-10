@@ -1069,10 +1069,20 @@ export class Game {
       if (platform.y !== y) return false;
       const entity = this.getPlatformCollisionEntity(platform);
       const broad = this.collisionSystem.getAABB(entity, 'platform', this.tile);
-      const extraCatchPx = platform.type === 'kayak1' ? this.tile * GAME_CONFIG.riverPlatforms.kayakLandingCatchPaddingX : 0;
+      const kayakLandingPad = GAME_CONFIG.riverPlatforms;
+      const platformWidthPx = broad.right - broad.left;
+      const platformHeightPx = broad.bottom - broad.top;
+      const isKayak = platform.type === 'kayak1';
+      const extraCatchPxX = isKayak ? ((kayakLandingPad.kayakLandingPadWidthMultiplier - 1) * platformWidthPx) / 2 : 0;
+      const extraCatchPxY = isKayak ? ((kayakLandingPad.kayakLandingPadHeightMultiplier - 1) * platformHeightPx) / 2 : 0;
       const laneScreen = this.worldToScreen(0, y).y;
       const playerCenterY = laneScreen + this.tile * 0.5;
-      return x * this.tile >= broad.left - extraCatchPx && x * this.tile <= broad.right + extraCatchPx && playerCenterY >= broad.top && playerCenterY <= broad.bottom;
+      return (
+        x * this.tile >= broad.left - extraCatchPxX &&
+        x * this.tile <= broad.right + extraCatchPxX &&
+        playerCenterY >= broad.top - extraCatchPxY &&
+        playerCenterY <= broad.bottom + extraCatchPxY
+      );
     });
   }
 
