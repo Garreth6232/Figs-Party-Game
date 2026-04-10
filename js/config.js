@@ -672,8 +672,14 @@ export const GAME_CONFIG = {
     trafficSpawnInterval: 1.05,
     trafficActiveUntilExit: true,
     trafficStopAfterEncounterRows: 0,
-    warningText: 'watch out for cars behind you!',
+    warningText: '- cars in front of you!',
     warningDurationSeconds: 2.4,
+    warningFlash: {
+      color: '220, 58, 58',
+      maxOpacity: 0.2,
+      inDurationMs: 90,
+      outDurationMs: 230
+    },
     activationMode: 'onPlayerEntry',
     jumpCooldownMultiplier: 1.6,
     pickleSpawnChanceMultiplier: 2,

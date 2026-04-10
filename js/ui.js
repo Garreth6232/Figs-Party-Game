@@ -12,6 +12,7 @@ export class UIController {
     this.coinCard = document.getElementById('coinCard');
     this.superJumpCard = document.getElementById('superJumpCard');
     this.toastEl = document.getElementById('toast');
+    this.warningFlashEl = document.getElementById('warningFlash');
 
     this.startScreen = document.getElementById('startScreen');
     this.pauseScreen = document.getElementById('pauseScreen');
@@ -66,6 +67,7 @@ export class UIController {
     this.scorePopTimer = null;
     this.bestPopTimer = null;
     this.toastTimer = null;
+    this.warningFlashTimer = null;
     this.onHitboxesToggle = null;
     this.onTuningChange = null;
     this.onTuningReset = null;
@@ -391,13 +393,31 @@ export class UIController {
     this.superJumpCard.classList.toggle('charged', count > 0);
   }
 
-  showToast(message, variant = 'info', durationMs = 1200) {
+  showToast(message, variant = 'info', durationMs = 1200, options = {}) {
     if (!this.toastEl) return;
     this.toastEl.textContent = message;
     this.toastEl.dataset.variant = variant;
     this.toastEl.classList.add('show');
     clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => this.toastEl.classList.remove('show'), durationMs);
+
+    if (options?.screenFlash) this.flashWarningScreen(options.screenFlash);
+  }
+
+  flashWarningScreen({ color, maxOpacity = 0.2, inDurationMs = 90, outDurationMs = 230 } = {}) {
+    if (!this.warningFlashEl) return;
+    this.warningFlashEl.style.setProperty('--warning-flash-color', color ?? '220, 58, 58');
+    this.warningFlashEl.style.setProperty('--warning-flash-opacity', String(maxOpacity));
+    this.warningFlashEl.style.setProperty('--warning-flash-in-duration', `${Math.max(0, inDurationMs)}ms`);
+    this.warningFlashEl.style.setProperty('--warning-flash-out-duration', `${Math.max(0, outDurationMs)}ms`);
+    this.warningFlashEl.classList.remove('active');
+    void this.warningFlashEl.offsetWidth;
+    this.warningFlashEl.classList.add('active');
+
+    clearTimeout(this.warningFlashTimer);
+    this.warningFlashTimer = setTimeout(() => {
+      this.warningFlashEl?.classList.remove('active');
+    }, Math.max(0, inDurationMs) + Math.max(0, outDurationMs) + 40);
   }
 
   hideAllOverlays() {
