@@ -251,9 +251,9 @@ export class UIController {
     this.infoList.innerHTML = '';
 
     const grouped = ASSET_GUIDE.reduce((acc, item) => {
-      const category = item.name.includes('Train')
+      const category = item.name.includes('Train') || item.name.includes('Max')
         ? 'Transit Hazards'
-        : item.name.includes('Coin')
+        : item.name.includes('Pickle')
           ? 'Collectibles'
           : item.name.includes('Fig')
             ? 'Player'
@@ -279,7 +279,7 @@ export class UIController {
           <img src="${item.preview}" alt="${item.name} preview" loading="lazy" />
           <div>
             <h3>${item.name} <span class="badge badge-${item.action}">${item.action}</span></h3>
-            <p>${item.description}</p>
+            ${item.description ? `<p>${item.description}</p>` : ''}
           </div>
         `;
         list.append(row);
@@ -311,15 +311,17 @@ export class UIController {
         const card = document.createElement('article');
         card.className = 'dev-asset-item';
         const canPreview = item.path.startsWith('assets/');
+        const displayKey = item.key === 'coin' ? 'pickle' : item.key;
+        const displayPath = item.key === 'coin' ? 'assets/collectibles/pickle.png' : item.path;
         card.innerHTML = `
           <div class="dev-asset-preview">
             ${canPreview ? `<img src="${item.path}" alt="${item.label} preview" loading="lazy" />` : '<span class="dev-asset-preview-fallback">n/a</span>'}
           </div>
           <div>
             <h5>${item.label} <span class="badge badge-${item.interactionType}">${item.interactionType}</span></h5>
-            <p><strong>Key:</strong> ${item.key}</p>
-            <p><strong>Path:</strong> ${item.path}</p>
-            <p>${item.description}</p>
+            <p><strong>Key:</strong> ${displayKey}</p>
+            <p><strong>Path:</strong> ${displayPath}</p>
+            ${item.description ? `<p>${item.description}</p>` : ''}
           </div>
         `;
         list.append(card);
