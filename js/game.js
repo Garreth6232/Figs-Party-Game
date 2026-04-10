@@ -1032,7 +1032,12 @@ export class Game {
       state.encounter = encounter;
       this.ensureBridgeEncounterMinimumPickles(encounter, state);
       if (!state.warningShown) {
-        this.ui.showToast(GAME_CONFIG.bridgeEncounter.warningText, 'info', GAME_CONFIG.bridgeEncounter.warningDurationSeconds * 1000);
+        this.ui.showToast(
+          GAME_CONFIG.bridgeEncounter.warningText,
+          'info',
+          GAME_CONFIG.bridgeEncounter.warningDurationSeconds * 1000,
+          { screenFlash: GAME_CONFIG.bridgeEncounter.warningFlash }
+        );
         state.warningShown = true;
       }
       return;
