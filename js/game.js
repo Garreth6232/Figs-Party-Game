@@ -18,8 +18,35 @@ const hash01 = (value) => {
   return x - Math.floor(x);
 };
 
-function randomFrom(list) {
-  return list[Math.floor(Math.random() * list.length)];
+const createRunSeed = () => {
+  const now = Date.now() >>> 0;
+  const perf = Math.floor((performance.now?.() ?? 0) * 1000) >>> 0;
+  const noise = Math.floor(Math.random() * 0xffffffff) >>> 0;
+  return (now ^ (perf << 11) ^ (noise >>> 3)) >>> 0;
+};
+
+class RunRng {
+  constructor(seed) {
+    this.state = (seed >>> 0) || 1;
+  }
+
+  next() {
+    this.state = (1664525 * this.state + 1013904223) >>> 0;
+    return this.state / 0x100000000;
+  }
+
+  range(min, max) {
+    return min + (max - min) * this.next();
+  }
+
+  int(minInclusive, maxExclusive) {
+    return Math.floor(this.range(minInclusive, maxExclusive));
+  }
+
+  pick(list) {
+    if (!Array.isArray(list) || list.length === 0) return null;
+    return list[this.int(0, list.length)];
+  }
 }
 
 const DEFAULT_MOVING_PROFILE = {
@@ -46,12 +73,7 @@ export class Game {
     this.superJumpVisualTimer = 0;
     this.superJumpState = null;
     this.collisionSystem = new CollisionSystem();
-    this.worldSeed = Math.floor(Math.random() * 1000000);
-    this.terrainSystem = new TerrainSystem({
-      gameConfig: GAME_CONFIG,
-      laneDefinitions: LANE_DEFINITIONS,
-      worldSeed: this.worldSeed
-    });
+    this.initializeRunRandomness();
     this.terrainDebugEnabled = false;
     this.resetRuntimeGameplaySettings();
     this.missingAssets = new Set();
@@ -161,6 +183,7 @@ export class Game {
   reset() {
     // Recovery mode: ignore persisted runtime overrides during resets until core gameplay stability is confirmed.
     this.resetRuntimeGameplaySettings();
+    this.initializeRunRandomness();
     this.player = {
       x: Math.floor(GAME_CONFIG.cols / 2),
       fx: Math.floor(GAME_CONFIG.cols / 2),
@@ -211,6 +234,17 @@ export class Game {
   start() {
     this.reset();
     this.state = GAME_STATES.PLAYING;
+  }
+
+  initializeRunRandomness() {
+    this.runSeed = createRunSeed();
+    this.runRng = new RunRng(this.runSeed);
+    this.worldSeed = this.runSeed % 1000000;
+    this.terrainSystem = new TerrainSystem({
+      gameConfig: GAME_CONFIG,
+      laneDefinitions: LANE_DEFINITIONS,
+      worldSeed: this.worldSeed
+    });
   }
 
   setState(nextState) {
@@ -529,8 +563,8 @@ export class Game {
   createPropRuntimeState() {
     const early = GAME_CONFIG.props.earlyLandmarkDistance;
     const large = GAME_CONFIG.props.largeLandmarkDistance;
-    const earlyLandmarkY = this.player.y + Math.round(randRange(early.min, early.max));
-    const bookstoreY = this.player.y + Math.round(randRange(large.min, large.max));
+    const earlyLandmarkY = this.player.y + Math.round(this.runRng.range(early.min, early.max));
+    const bookstoreY = this.player.y + Math.round(this.runRng.range(large.min, large.max));
     const signs = GAME_CONFIG.props.rules.streetSigns.family.filter((key) => this.canUseDecorAsset(key));
     for (let i = signs.length - 1; i > 0; i -= 1) {
       const j = Math.floor(hash01(this.worldSeed + i * 1.27) * (i + 1));
@@ -807,9 +841,13 @@ export class Game {
   }
 
   seedWaterLanePlatforms(lane) {
-    const count = Math.max(1, Math.round(GAME_CONFIG.riverPlatforms.minLanePlatformCount * this.runtimeRiverDensity));
+    const desiredCount = lane.seedPlatformCount ?? GAME_CONFIG.riverPlatforms.minLanePlatformCount;
+    const count = Math.max(1, Math.round(desiredCount * this.runtimeRiverDensity));
+    const baseSpacing = GAME_CONFIG.cols / count;
+    const laneJitter = ((hash01(this.worldSeed * 7.17 + lane.y * 0.83) - 0.5) * baseSpacing * 0.65);
     for (let i = 0; i < count; i += 1) {
-      const spacing = i * (GAME_CONFIG.cols / count);
+      const perPlatformJitter = (hash01(this.worldSeed * 8.31 + lane.y * 0.57 + i * 3.11) - 0.5) * baseSpacing * 0.25;
+      const spacing = i * baseSpacing + laneJitter + perPlatformJitter;
       const x = lane.direction > 0 ? -1.2 + spacing : GAME_CONFIG.cols + 1.2 - spacing;
       const profile = this.getMovingProfile(lane.platformType);
       this.platforms.push({
@@ -833,7 +871,7 @@ export class Game {
     const startX = lane.direction > 0 ? -1.4 : GAME_CONFIG.cols + 1.4;
     const spawnableHazards = laneDef.allowedHazards.filter((hazardType) => this.laneAllowsEntityType(lane, hazardType, 'hazards'));
     if (spawnableHazards.length === 0) return;
-    const vehicleType = randomFrom(spawnableHazards);
+    const vehicleType = this.runRng.pick(spawnableHazards);
     const profile = this.getMovingProfile(vehicleType);
     const h = {
       id: this.nextHazardId++,
@@ -857,8 +895,8 @@ export class Game {
 
     const playableColumns = this.getBridgePlayableColumns();
     const candidates = playableColumns.filter((col) => col !== encounterState.lastSpawnLane);
-    const spawnColumn = randomFrom(candidates.length ? candidates : playableColumns);
-    const vehicleType = randomFrom(spawnableHazards);
+    const spawnColumn = this.runRng.pick(candidates.length ? candidates : playableColumns);
+    const vehicleType = this.runRng.pick(spawnableHazards);
     const profile = this.getMovingProfile(vehicleType);
     const bridgeEncounter = lane.bridgeEncounter;
     const spawnAtBridgeEnd = GAME_CONFIG.bridgeEncounter.trafficDirection === 'down';
@@ -937,8 +975,8 @@ export class Game {
     if (laneDef.allowedPlatforms.length === 0) return;
     const spawnablePlatforms = laneDef.allowedPlatforms.filter((platformType) => this.laneAllowsEntityType(lane, platformType, 'platforms'));
     if (spawnablePlatforms.length === 0) return;
-    const lanePlatformType = lane.platformType ?? randomFrom(spawnablePlatforms);
-    const platformType = this.laneAllowsEntityType(lane, lanePlatformType, 'platforms') ? lanePlatformType : randomFrom(spawnablePlatforms);
+    const lanePlatformType = lane.platformType ?? this.runRng.pick(spawnablePlatforms);
+    const platformType = this.laneAllowsEntityType(lane, lanePlatformType, 'platforms') ? lanePlatformType : this.runRng.pick(spawnablePlatforms);
     const startX = lane.direction > 0 ? -1.2 : GAME_CONFIG.cols + 1.2;
     const profile = this.getMovingProfile(platformType);
     this.platforms.push({
@@ -959,7 +997,7 @@ export class Game {
     const playerOnBridge = this.getBridgeEncounterStateByPlayerLane().lane?.type === 'bridgeEncounter';
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      const y = this.player.y + Math.floor(randRange(GAME_CONFIG.coins.spawnAheadMin, GAME_CONFIG.coins.spawnAheadMax));
+      const y = this.player.y + Math.floor(this.runRng.range(GAME_CONFIG.coins.spawnAheadMin, GAME_CONFIG.coins.spawnAheadMax));
       this.ensureLane(y);
       const lane = this.laneCache.get(y);
       if (!lane) continue;
@@ -968,12 +1006,12 @@ export class Game {
       if (!laneAllowsCoins && !bridgeAllowsCoins) continue;
 
       const x = bridgeAllowsCoins
-        ? randomFrom(this.getBridgePlayableColumns())
-        : Math.floor(randRange(0, GAME_CONFIG.cols));
+        ? this.runRng.pick(this.getBridgePlayableColumns())
+        : this.runRng.int(0, GAME_CONFIG.cols);
       const occupied = this.coins.some((coin) => coin.x === x && Math.abs(coin.y - y) < 2);
       if (occupied) continue;
 
-      this.coins.push({ id: this.nextCoinId++, x, y, bobSeed: Math.random() * 1000, w: 0.32, h: 0.32 });
+      this.coins.push({ id: this.nextCoinId++, x, y, bobSeed: this.runRng.range(0, 1000), w: 0.32, h: 0.32 });
       return;
     }
   }
@@ -1131,7 +1169,7 @@ export class Game {
     this.coinSpawnTimer += dt;
     if (this.coinSpawnTimer >= 1) {
       this.coinSpawnTimer = 0;
-      if (Math.random() < this.getCurrentPickleSpawnChancePerSecond()) this.spawnCoin();
+      if (this.runRng.next() < this.getCurrentPickleSpawnChancePerSecond()) this.spawnCoin();
     }
 
     for (const hazard of this.hazards) {
