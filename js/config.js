@@ -649,14 +649,34 @@ export const GAME_CONFIG = {
     shadowAlpha: 0.22,
     shadowOffsetRatio: 0.12
   },
+  generation: {
+    zoneSpan: 3,
+    laneHistorySize: 5,
+    laneHistoryPenalty: 0.38,
+    trafficHistorySize: 3,
+    trafficHistoryPenalty: 0.45,
+    riverHistorySize: 3,
+    riverHistoryPenalty: 0.45
+  },
+  roadTraffic: {
+    minSpeed: 1.35,
+    maxSpeed: 4.2
+  },
   laneWeights: [
     { type: 'grass', weight: 2.2 },
     { type: 'road', weight: 4.0 },
     { type: 'water', weight: 2.0 },
     { type: 'rail', weight: 1.25 }
   ],
+  trafficArchetypes: [
+    { type: 'sparse', weight: 1.05, intervalMultiplierMin: 1.22, intervalMultiplierMax: 1.48, speedMultiplierMin: 0.92, speedMultiplierMax: 1.03 },
+    { type: 'regular', weight: 1.35, intervalMultiplierMin: 0.94, intervalMultiplierMax: 1.13, speedMultiplierMin: 0.96, speedMultiplierMax: 1.08 },
+    { type: 'clustered', weight: 0.9, intervalMultiplierMin: 0.74, intervalMultiplierMax: 0.92, speedMultiplierMin: 0.9, speedMultiplierMax: 1.01 },
+    { type: 'fastLight', weight: 0.55, intervalMultiplierMin: 1.04, intervalMultiplierMax: 1.25, speedMultiplierMin: 1.05, speedMultiplierMax: 1.15 }
+  ],
   bridgeEncounter: {
-    firstBridgeMaxDistance: 70,
+    firstBridgeMaxDistance: 130,
+    minSpawnTile: 100,
     rarityPerRegion: 0.075,
     regionSpan: 72,
     startOffsetMin: 10,
@@ -667,7 +687,7 @@ export const GAME_CONFIG = {
     trafficDirection: 'down',
     trafficStopMode: 'onBridgeEndVisible',
     trafficSpawnRateMultiplier: 1.25,
-    trafficSpeedMultiplier: 1.1,
+    trafficSpeedMultiplier: 0.99,
     trafficSpeed: 3.6,
     trafficSpawnInterval: 1.05,
     trafficActiveUntilExit: true,
@@ -728,6 +748,41 @@ export const GAME_CONFIG = {
       kayak1: 0.42
     }
   },
+  riverArchetypes: [
+    {
+      type: 'wideLogs',
+      weight: 1.05,
+      platformTypes: ['log1', 'raft1'],
+      intervalMultiplierMin: 1.08,
+      intervalMultiplierMax: 1.28,
+      speedMultiplierMin: 0.88,
+      speedMultiplierMax: 1.02,
+      initialPlatformCountMin: 2,
+      initialPlatformCountMax: 3
+    },
+    {
+      type: 'mixedCurrent',
+      weight: 1.45,
+      platformTypes: ['log1', 'raft1', 'kayak1'],
+      intervalMultiplierMin: 0.9,
+      intervalMultiplierMax: 1.12,
+      speedMultiplierMin: 0.95,
+      speedMultiplierMax: 1.08,
+      initialPlatformCountMin: 3,
+      initialPlatformCountMax: 4
+    },
+    {
+      type: 'tightCrossing',
+      weight: 0.95,
+      platformTypes: ['raft1', 'kayak1'],
+      intervalMultiplierMin: 0.76,
+      intervalMultiplierMax: 0.96,
+      speedMultiplierMin: 0.84,
+      speedMultiplierMax: 0.97,
+      initialPlatformCountMin: 4,
+      initialPlatformCountMax: 5
+    }
+  ],
   collisions: {
     maskResolution: 20,
     sampleStridePx: 2,
