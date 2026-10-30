@@ -1,4 +1,4 @@
-import { ASSET_MANIFEST, ENTITY_LANE_RULES, GAME_CONFIG, GAME_STATES, LANE_DEFINITIONS, STORAGE_KEYS } from './config.js';
+import { ASSET_MANIFEST, ENTITY_LANE_RULES, GAME_CONFIG, GAME_STATES, GAME_THEMES, LANE_DEFINITIONS, STORAGE_KEYS } from './config.js';
 import { CollisionSystem } from './collision.js';
 import { TerrainSystem } from './terrain-system.js';
 import { DEATH_CAUSES, getDeathMessage } from './death-messages.js';
@@ -70,6 +70,10 @@ export class Game {
     this.collectibleSprites = {};
     this.vehicleSprites = {};
     this.hazardSprites = {};
+    this.themeSprites = {};
+    this.mode = 'fig';
+    this.theme = null;
+    this.fogAmount = 0;
     this.superJumpVisualTimer = 0;
     this.superJumpState = null;
     this.collisionSystem = new CollisionSystem();
@@ -159,6 +163,17 @@ export class Game {
       registerImage(this.hazardSprites, key, src);
     }
 
+    // Theme art loads up front too (it is small), so switching modes is instant.
+    for (const [themeKey, theme] of Object.entries(GAME_THEMES)) {
+      const sprites = { player: {}, collectible: {}, obstacles: {}, environment: {} };
+      for (const [facing, src] of Object.entries(theme.player.sprites)) registerImage(sprites.player, facing, src);
+      registerImage(sprites.collectible, 'main', theme.collectible.path);
+      theme.obstacles.pool.forEach((entry, index) => registerImage(sprites.obstacles, index, entry.path));
+      for (const [key, src] of Object.entries(theme.environment?.textures ?? {})) registerImage(sprites.environment, key, src);
+      if (theme.environment?.canopy) registerImage(sprites.environment, 'canopy', theme.environment.canopy.path);
+      this.themeSprites[themeKey] = sprites;
+    }
+
     const loadTimeout = new Promise((resolve) => setTimeout(resolve, GAME_CONFIG.assetLoadTimeoutMs));
     this.assetsReady = Promise.race([Promise.all(pending), loadTimeout]);
   }
@@ -237,6 +252,7 @@ export class Game {
     this.queuedMove = null;
     this.pruneTimer = 0;
     this.time = 0;
+    this.fogAmount = 0;
     this.superJumpVisualTimer = 0;
     this.superJumpState = null;
     this.cameraY = this.player.y - this.runtimeCameraOffsetRows;
@@ -258,9 +274,17 @@ export class Game {
     this.ui.updateSuperJumps(this.superJumps);
   }
 
-  start() {
+  start(mode = this.mode) {
+    this.setMode(mode);
     this.reset();
     this.state = GAME_STATES.PLAYING;
+  }
+
+  // 'fig' is the original game; any other mode names a theme in GAME_THEMES.
+  setMode(mode) {
+    this.mode = GAME_THEMES[mode] ? mode : 'fig';
+    this.theme = GAME_THEMES[this.mode] ?? null;
+    this.activeThemeSprites = this.theme ? this.themeSprites[this.mode] : null;
   }
 
   initializeRunRandomness() {
@@ -270,7 +294,8 @@ export class Game {
     this.terrainSystem = new TerrainSystem({
       gameConfig: GAME_CONFIG,
       laneDefinitions: LANE_DEFINITIONS,
-      worldSeed: this.worldSeed
+      worldSeed: this.worldSeed,
+      firstBridgeStartRange: this.theme?.firstBridgeStartRange ?? null
     });
   }
 
@@ -522,7 +547,7 @@ export class Game {
   }
 
   hasBlockingHazard(centerX, y, padding = 0.55) {
-    return this.hazards.some((h) => h.y === y && Math.abs(h.x - centerX) < this.getVisibleLengthTiles(h.type) / 2 + padding);
+    return this.hazards.some((h) => h.y === y && Math.abs(h.x - centerX) < this.getVisibleLengthTiles(h) / 2 + padding);
   }
 
   getMovingProfile(type) {
@@ -539,9 +564,9 @@ export class Game {
   }
 
   getRuntimeRenderScale(renderProfileKey) {
-    if (renderProfileKey === 'player') return this.runtimeRenderScale.player;
+    if (renderProfileKey === 'player' || renderProfileKey === 'themePlayer') return this.runtimeRenderScale.player;
     if (renderProfileKey === 'maxTrain') return this.runtimeRenderScale.train;
-    if (CAR_RENDER_KEYS.includes(renderProfileKey)) return this.runtimeRenderScale.car;
+    if (renderProfileKey === 'themeObstacle' || CAR_RENDER_KEYS.includes(renderProfileKey)) return this.runtimeRenderScale.car;
     return 1;
   }
 
@@ -588,36 +613,118 @@ export class Game {
     return this.vehicleSprites[type] ?? this.hazardSprites[type];
   }
 
-  isEntityFlipped(entity, profile = this.getMovingProfile(entity.type)) {
-    return Boolean(profile.facesLeft) && entity.motionAxis !== 'y' && entity.dir > 0;
+  // Art that looks left is mirrored when it travels right, and art that looks right when it travels left.
+  isFacingAway(entity, facing) {
+    if (entity.motionAxis === 'y') return false;
+    return (facing === 'left' && entity.dir > 0) || (facing === 'right' && entity.dir < 0);
   }
 
-  getEntityShape(entity) {
+  // A themed obstacle wears one of the theme's sprites instead of its normal vehicle art.
+  isThemedObstacle(entity) {
+    return Boolean(this.theme) && entity.skin != null;
+  }
+
+  pickObstacleSkin() {
+    return this.theme ? this.runRng.int(0, this.theme.obstacles.pool.length) : null;
+  }
+
+  getThemedObstacleRender(skin) {
+    const { obstacles } = this.theme;
+    const image = this.activeThemeSprites.obstacles[skin];
+    const aspect = image?.naturalWidth ? image.naturalWidth / image.naturalHeight : 1;
+    const height = Math.min(obstacles.height, obstacles.maxWidth / aspect);
+    return { width: height * aspect, height, offsetX: 0, offsetY: obstacles.offsetY };
+  }
+
+  // Everything needed to draw an entity and test it for hits: one shape per sprite, in screen pixels.
+  // Most entities are one sprite; a themed MAX is a flock of several.
+  getEntityShapes(entity) {
+    if (!this.isThemedObstacle(entity)) {
+      const profile = this.getMovingProfile(entity.type);
+      const image = this.getEntitySprite(entity.type);
+      const crop = GAME_CONFIG.renderProfiles[entity.type]?.crop;
+      return [{
+        ...this.getSpriteRect(this.getMovingDrawRect(entity, profile), entity.type),
+        image,
+        crop,
+        mask: this.collisionSystem.getMask(image, crop),
+        flipX: this.isFacingAway(entity, profile.facesLeft ? 'left' : null)
+      }];
+    }
+
+    const { obstacles } = this.theme;
+    const count = entity.type === 'maxTrain' ? obstacles.flockSize : 1;
+    const shapes = [];
+    for (let i = 0; i < count; i += 1) {
+      const skin = (entity.skin + i * 5) % obstacles.pool.length;
+      const image = this.activeThemeSprites.obstacles[skin];
+      const offsetX = (i - (count - 1) / 2) * obstacles.flockSpacing;
+      const rect = this.getMovingDrawRect({ x: entity.x + offsetX, y: entity.y }, { render: this.getThemedObstacleRender(skin) });
+      shapes.push({
+        ...this.getSpriteRect(rect, 'themeObstacle'),
+        image,
+        mask: this.collisionSystem.getMask(image),
+        flipX: this.isFacingAway(entity, obstacles.pool[skin].facing)
+      });
+    }
+    return shapes;
+  }
+
+  drawShape(shape) {
+    const { image, crop = {} } = shape;
+    if (!image?.complete || !image.naturalWidth) return false;
+    const sx = image.naturalWidth * (crop.left ?? 0);
+    const sy = image.naturalHeight * (crop.top ?? 0);
+    const sw = image.naturalWidth * (1 - (crop.left ?? 0) - (crop.right ?? 0));
+    const sh = image.naturalHeight * (1 - (crop.top ?? 0) - (crop.bottom ?? 0));
+    if (shape.flipX) {
+      this.ctx.save();
+      this.ctx.translate(shape.x + shape.width, shape.y);
+      this.ctx.scale(-1, 1);
+      this.ctx.drawImage(image, sx, sy, sw, sh, 0, 0, shape.width, shape.height);
+      this.ctx.restore();
+    } else {
+      this.ctx.drawImage(image, sx, sy, sw, sh, shape.x, shape.y, shape.width, shape.height);
+    }
+    return true;
+  }
+
+  // Length of the visible part of an entity ({ type, skin }), in tiles. Traffic is spaced by what you can see.
+  getVisibleLengthTiles(entity) {
+    if (this.isThemedObstacle(entity)) {
+      const { obstacles } = this.theme;
+      if (entity.type === 'maxTrain') return obstacles.flockSize * obstacles.flockSpacing;
+      const mask = this.collisionSystem.getMask(this.activeThemeSprites.obstacles[entity.skin]);
+      return this.getThemedObstacleRender(entity.skin).width * this.getRuntimeRenderScale('themeObstacle') * (mask.maxU - mask.minU);
+    }
     const profile = this.getMovingProfile(entity.type);
-    return {
-      ...this.getSpriteRect(this.getMovingDrawRect(entity, profile), entity.type),
-      mask: this.collisionSystem.getMask(this.getEntitySprite(entity.type), GAME_CONFIG.renderProfiles[entity.type]?.crop),
-      flipX: this.isEntityFlipped(entity, profile)
-    };
-  }
-
-  // Length of the visible part of a sprite, in tiles. Used to space traffic by what you can see.
-  getVisibleLengthTiles(type) {
-    const profile = this.getMovingProfile(type);
-    const renderProfile = GAME_CONFIG.renderProfiles[type] ?? {};
-    const mask = this.collisionSystem.getMask(this.getEntitySprite(type), renderProfile.crop);
-    const width = profile.render.width * (renderProfile.scaleX ?? 1) * this.getRuntimeRenderScale(type);
+    const renderProfile = GAME_CONFIG.renderProfiles[entity.type] ?? {};
+    const mask = this.collisionSystem.getMask(this.getEntitySprite(entity.type), renderProfile.crop);
+    const width = profile.render.width * (renderProfile.scaleX ?? 1) * this.getRuntimeRenderScale(entity.type);
     return width * (mask.maxU - mask.minU);
   }
 
   getPlayerSprite() {
-    return this.player.visualState === 'superJump' ? this.playerSprites.superJump : this.playerSprites[this.player.facing];
+    const sprites = this.activeThemeSprites?.player ?? this.playerSprites;
+    return this.player.visualState === 'superJump' ? sprites.superJump : sprites[this.player.facing];
+  }
+
+  getPlayerRenderKey() {
+    return this.theme ? 'themePlayer' : 'player';
   }
 
   getPlayerRect(drawX, drawY, stretch = 0) {
     const pos = this.worldToScreen(drawX, drawY);
-    const width = this.tile * (0.58 + stretch * 0.24);
-    const height = this.tile * (0.62 - stretch * 0.16);
+    let baseWidth = 0.58;
+    let baseHeight = 0.62;
+    if (this.theme) {
+      // Themed heroes keep their own proportions: a set height, with the width from the art.
+      const image = this.getPlayerSprite();
+      baseHeight = this.theme.player.height;
+      baseWidth = baseHeight * (image?.naturalWidth ? image.naturalWidth / image.naturalHeight : 0.25);
+    }
+    const width = this.tile * baseWidth * (1 + stretch * 0.41);
+    const height = this.tile * baseHeight * (1 - stretch * 0.26);
     return {
       x: pos.x + (this.tile - width) / 2,
       y: pos.y + (this.tile - height) * (0.5 + GAME_CONFIG.alignment.player.renderOffsetY),
@@ -626,11 +733,12 @@ export class Game {
     };
   }
 
-  // Fig's hitbox follows where she is drawn (mid-hop too), minus the squash-and-stretch.
+  // The player's hitbox follows where they are drawn (mid-hop too), minus the squash-and-stretch.
   getPlayerShape() {
+    const renderKey = this.getPlayerRenderKey();
     return {
-      ...this.getSpriteRect(this.getPlayerRect(this.player.drawX, this.player.drawY), 'player'),
-      mask: this.collisionSystem.getMask(this.getPlayerSprite(), GAME_CONFIG.renderProfiles.player.crop),
+      ...this.getSpriteRect(this.getPlayerRect(this.player.drawX, this.player.drawY), renderKey),
+      mask: this.collisionSystem.getMask(this.getPlayerSprite(), GAME_CONFIG.renderProfiles[renderKey]?.crop),
       scale: GAME_CONFIG.collisions.playerForgiveness
     };
   }
@@ -767,7 +875,31 @@ export class Game {
     };
   }
 
+  // Forest theme: trees crowd both edges of every forest-floor row, and there are no city props.
+  generateForestProps(lane) {
+    if (lane.type !== 'grass') return [];
+    const props = [];
+    const count = 2 + Math.floor(hash01(this.worldSeed * 1.31 + lane.y * 0.71) * 3);
+    for (let i = 0; i < count; i += 1) {
+      const roll = hash01(this.worldSeed * 2.93 + lane.y * 1.37 + i * 4.1);
+      const size = 1.15 + roll * 0.6;
+      const height = 0.8 * size;
+      const tree = this.createDecorProp('tree1', lane, {
+        anchor: i % 2 === 0 ? 'left' : 'right',
+        width: 0.62 * size,
+        height,
+        // The tree art's trunk ends 89% of the way down; stand it on the bottom of the row.
+        offsetY: 1 - height * 0.89,
+        edgePadding: 0.02 + Math.floor(i / 2) * (0.45 + roll * 0.35),
+        zIndex: 1
+      });
+      if (tree) props.push(tree);
+    }
+    return props;
+  }
+
   generateLaneProps(lane) {
+    if (this.theme?.environment?.props === 'forest') return this.generateForestProps(lane);
     if (this.propRuntime.reservedRows?.has(lane.y)) return [];
     const laneDef = this.getLaneDefinition(lane.type);
     const props = [];
@@ -962,7 +1094,7 @@ export class Game {
     lane.flow = {
       travel: 0,
       spawnDistance: this.runRng.range(0, 3),
-      nextType: this.pickFlowEntityType(lane),
+      next: this.pickFlowEntity(lane),
       platoonLeft: 0,
       alternate: false,
       convoyNext: false
@@ -976,22 +1108,24 @@ export class Game {
     flow.travel += distance;
     while (flow.travel >= flow.spawnDistance) {
       flow.travel -= flow.spawnDistance;
-      const spawnedType = flow.nextType;
-      this.spawnFlowEntity(lane, spawnedType, flow.travel);
-      flow.nextType = this.pickFlowEntityType(lane);
+      const spawned = flow.next;
+      this.spawnFlowEntity(lane, spawned, flow.travel);
+      flow.next = this.pickFlowEntity(lane);
       const gap = lane.type === 'water' ? this.nextRiverGap(lane, flow) : this.nextRoadGap(lane, flow);
-      flow.spawnDistance = this.getVisibleLengthTiles(spawnedType) / 2 + gap + this.getVisibleLengthTiles(flow.nextType) / 2;
+      flow.spawnDistance = this.getVisibleLengthTiles(spawned) / 2 + gap + this.getVisibleLengthTiles(flow.next) / 2;
     }
   }
 
-  pickFlowEntityType(lane) {
+  // The next entity a flow lane will release: { type, skin }. The skin (a themed sprite) is chosen
+  // now so the gap in front of it can be planned from its real size.
+  pickFlowEntity(lane) {
     if (lane.type === 'water') {
       const pool = (lane.platformPool ?? []).filter((type) => this.laneAllowsEntityType(lane, type, 'platforms'));
-      if (!pool.length || this.runRng.next() < GAME_CONFIG.riverPlatforms.primaryTypeShare) return lane.platformType;
-      return this.runRng.pick(pool);
+      if (!pool.length || this.runRng.next() < GAME_CONFIG.riverPlatforms.primaryTypeShare) return { type: lane.platformType, skin: null };
+      return { type: this.runRng.pick(pool), skin: null };
     }
     const spawnable = this.getLaneDefinition(lane.type).allowedHazards.filter((type) => this.laneAllowsEntityType(lane, type, 'hazards'));
-    return this.runRng.pick(spawnable);
+    return { type: this.runRng.pick(spawnable), skin: this.pickObstacleSkin() };
   }
 
   // Smallest gap (tiles) that still leaves Fig a fair window to hop through at this speed.
@@ -1002,7 +1136,8 @@ export class Game {
 
   nextRoadGap(lane, flow) {
     const archetype = lane.trafficArchetype ?? {};
-    const minGap = this.getMinRoadGap(lane.speed);
+    // A small cushion so frame-timing rounding can never pull a gap under the minimum.
+    const minGap = this.getMinRoadGap(lane.speed) + 0.05;
     const roll = (range, fallback) => (range ? this.runRng.range(range[0], range[1]) : fallback);
     let gap;
     if (archetype.platoonSize) {
@@ -1038,11 +1173,11 @@ export class Game {
     return clamp(gap, river.minGap, maxGap);
   }
 
-  spawnFlowEntity(lane, type, offset = 0) {
+  spawnFlowEntity(lane, { type, skin }, offset = 0) {
     const entryOffset = GAME_CONFIG.flowLanes.entryOffset;
     const startX = lane.direction > 0 ? -entryOffset : GAME_CONFIG.cols + entryOffset;
     const x = startX + lane.direction * offset;
-    const entity = { id: 0, type, x, prevX: x, y: lane.y, dir: lane.direction, speed: lane.speed };
+    const entity = { id: 0, type, skin, x, prevX: x, y: lane.y, dir: lane.direction, speed: lane.speed };
     if (lane.type === 'water') {
       entity.id = this.nextPlatformId++;
       this.platforms.push(entity);
@@ -1060,6 +1195,7 @@ export class Game {
     this.hazards.push({
       id: this.nextHazardId++,
       type: 'maxTrain',
+      skin: this.pickObstacleSkin(),
       x: startX,
       prevX: startX,
       y: lane.y,
@@ -1122,6 +1258,7 @@ export class Game {
     this.hazards.push({
       id: this.nextHazardId++,
       type: vehicleType,
+      skin: this.pickObstacleSkin(),
       x: spawnColumn + 0.5,
       prevX: spawnColumn + 0.5,
       y: spawnY,
@@ -1239,7 +1376,7 @@ export class Game {
   activateCheatCoins() {
     if (this.state !== GAME_STATES.PLAYING) return;
     this.addCoins(GAME_CONFIG.cheats.rewardCoins);
-    this.ui.showToast(`Cheat activated: +${GAME_CONFIG.cheats.rewardCoins} pickles`, 'info');
+    this.ui.showToast(`Cheat activated: +${GAME_CONFIG.cheats.rewardCoins} ${this.theme?.collectibleName ?? 'pickles'}`, 'info');
   }
 
   updateBridgeEncounterActivation() {
@@ -1321,6 +1458,7 @@ export class Game {
 
     const cameraFollow = 1 - Math.pow(1 - GAME_CONFIG.cameraLerp, dt * 60);
     this.cameraY += (this.player.y - this.runtimeCameraOffsetRows - this.cameraY) * cameraFollow;
+    this.fogAmount += (this.getBridgeFogTarget() - this.fogAmount) * (1 - Math.pow(0.94, dt * 60));
 
     const difficulty = this.getDifficulty();
     const active = this.getSimulationRange();
@@ -1337,12 +1475,6 @@ export class Game {
     if (this.pruneTimer >= 0.5) {
       this.pruneTimer = 0;
       this.pruneLanesBehind();
-    }
-
-    this.coinSpawnTimer += dt;
-    if (this.coinSpawnTimer >= 1) {
-      this.coinSpawnTimer = 0;
-      if (this.runRng.next() < this.getCurrentPickleSpawnChancePerSecond()) this.spawnCoin();
     }
 
     for (const hazard of this.hazards) {
@@ -1368,6 +1500,14 @@ export class Game {
       if (isActiveRow(platform.y)) platform.x += platform.speed * platform.dir * dt;
     }
     this.platforms = this.platforms.filter((p) => this.isPlatformCompatibleWithLane(p) && p.x > -5 && p.x < GAME_CONFIG.cols + 5);
+
+    // After movement on purpose: spawning a coin can create new lanes, and a lane pre-filled
+    // between the spawn step and the movement step would release its next car a frame early.
+    this.coinSpawnTimer += dt;
+    if (this.coinSpawnTimer >= 1) {
+      this.coinSpawnTimer = 0;
+      if (this.runRng.next() < this.getCurrentPickleSpawnChancePerSecond()) this.spawnCoin();
+    }
 
     this.updateRiverAttachment(dt);
 
@@ -1426,7 +1566,7 @@ export class Game {
     const px = x * this.tile;
     return this.platforms.find((platform) => {
       if (platform.y !== y) return false;
-      const span = this.collisionSystem.getVisibleSpan(this.getEntityShape(platform));
+      const span = this.collisionSystem.getVisibleSpan(this.getEntityShapes(platform)[0]);
       return px >= span.left - grace && px <= span.right + grace;
     });
   }
@@ -1479,14 +1619,14 @@ export class Game {
         if (Math.abs(h.x - playerCenterX) > 1.2 || Math.abs(h.y - this.player.drawY) > 1.6) continue;
       } else if (Math.abs(h.y - this.player.drawY) >= 1) continue;
 
-      if (this.collisionSystem.overlaps(playerShape, this.getEntityShape(h))) {
+      if (this.getEntityShapes(h).some((shape) => this.collisionSystem.overlaps(playerShape, shape))) {
         this.kill(h.type === 'maxTrain' ? DEATH_CAUSES.TRAIN : DEATH_CAUSES.CAR);
         return;
       }
 
       if (lane.type === 'road' && h.y === this.player.y && !h.nearMissAwarded) {
         // A vehicle that passes within a third of a tile of Fig without touching her.
-        const edgeGap = Math.abs(h.x - (this.player.fx + 0.5)) - this.getVisibleLengthTiles(h.type) / 2 - 0.25;
+        const edgeGap = Math.abs(h.x - (this.player.fx + 0.5)) - this.getVisibleLengthTiles(h) / 2 - 0.25;
         const now = performance.now();
         if (edgeGap < 0.33 && now - this.lastNearMissAt > 120) {
           h.nearMissAwarded = true;
@@ -1513,7 +1653,7 @@ export class Game {
     this.audio.play('hit');
     this.triggerScreenShake(GAME_CONFIG.effects.deathShake);
     this.spawnBurst('#c56f5c', 26);
-    const message = overrideMessage ?? getDeathMessage(cause);
+    const message = overrideMessage ?? getDeathMessage(cause, this.theme?.deathMessages);
     this.onGameOver?.({ score: this.score, message, cause });
   }
 
@@ -1595,6 +1735,8 @@ export class Game {
     this.drawCoins();
     this.drawPlayer();
     this.drawBridgeOverlays();
+    this.drawCanopyShade();
+    this.drawBridgeFog();
     this.drawParticles();
     this.drawRain();
     this.drawCollisionDebug();
@@ -1623,10 +1765,11 @@ export class Game {
   // A canvas pattern of a ground texture pre-scaled to its on-screen size. Photos that do not tile
   // on their own are mirrored 2x2 so every edge meets a matching edge. Filling a lane rectangle with
   // a pattern can never spill into the next row (the old tiling drew grass 1.8 rows tall).
-  getTexture(key, worldWidth, { mirror = false } = {}) {
-    const image = this.environmentSprites[key];
+  // A theme can swap any ground texture; base: true always uses the original (e.g. the bridge deck).
+  getTexture(key, worldWidth, { mirror = false, base = false } = {}) {
+    const image = (!base && this.activeThemeSprites?.environment[key]) || this.environmentSprites[key];
     if (!image?.complete || !image.naturalWidth) return null;
-    const cacheKey = `texture:${key}:${worldWidth}:${mirror}`;
+    const cacheKey = `texture:${image.src}:${worldWidth}:${mirror}`;
     let texture = this.paintCache.get(cacheKey);
     if (texture) return texture;
 
@@ -1660,7 +1803,7 @@ export class Game {
     const texture = this.getTexture('grassTile', style.tileWorldSize);
     if (texture) this.fillTexture(texture, 0, top, this.worldWidth, height);
     // A soft wash calms the photo grass so Fig and the pickles stand out from it.
-    this.ctx.fillStyle = style.tint;
+    this.ctx.fillStyle = this.theme?.environment?.grassTint ?? style.tint;
     this.ctx.fillRect(0, top, this.worldWidth, height);
     this.drawConnectedLaneShading(lane, top, height, {
       capTop: 'rgba(8, 16, 8, 0.3)',
@@ -1690,7 +1833,13 @@ export class Game {
       ctx.fillRect(0, edge.shadowY, this.worldWidth, 2);
     }
 
-    if (lane.connectedContext?.north) {
+    const dividers = this.theme?.environment?.laneDividers ?? 'painted';
+    if (lane.connectedContext?.north && dividers === 'soft') {
+      // Trails have no paint, just a worn edge between rows.
+      ctx.fillStyle = 'rgba(28, 18, 8, 0.35)';
+      ctx.fillRect(0, top, this.worldWidth, Math.max(2, Math.round(this.tile * 0.05)));
+    }
+    if (lane.connectedContext?.north && dividers === 'painted') {
       const lineWidth = Math.max(1.5, this.tile * 0.045);
       ctx.strokeStyle = 'rgba(238, 238, 230, 0.62)';
       ctx.lineWidth = lineWidth;
@@ -1711,7 +1860,7 @@ export class Game {
     // Each river lane's water drifts with its own current, so you can read which way the boats go.
     const drift = lane.type === 'water' ? this.time * lane.speed * lane.direction * style.flowFactor * this.tile : 0;
     if (texture) this.fillTexture(texture, 0, top, this.worldWidth, height, drift);
-    ctx.fillStyle = style.tint;
+    ctx.fillStyle = this.theme?.environment?.waterTint ?? style.tint;
     ctx.fillRect(0, top, this.worldWidth, height);
     if (lane.type === 'water' && lane.connectedContext?.north) {
       ctx.fillStyle = 'rgba(214, 236, 246, 0.1)';
@@ -1732,6 +1881,11 @@ export class Game {
     const texture = this.getTexture('railTile', GAME_CONFIG.environmentTiles.rail.tileWorldSize);
     // The photo already has the ties and rails; one copy is sized to exactly one lane tall.
     if (texture) this.fillTexture(texture, 0, top, this.worldWidth, height, 0, top);
+    const railTint = this.theme?.environment?.railTint;
+    if (railTint) {
+      this.ctx.fillStyle = railTint;
+      this.ctx.fillRect(0, top, this.worldWidth, height);
+    }
     this.drawTrainWarning(lane, top, height);
     this.drawConnectedLaneShading(lane, top, height, {
       capTop: 'rgba(24, 24, 24, 0.42)',
@@ -1861,8 +2015,8 @@ export class Game {
     ctx.lineTo(right + girder / 2 + (nearOffset + farOffset) / 2, top + height / 2);
     ctx.stroke();
 
-    // Road deck.
-    const asphalt = this.getTexture('roadTile', GAME_CONFIG.environmentTiles.road.tileWorldSize);
+    // Road deck (always asphalt, even when a theme turns roads into trails).
+    const asphalt = this.getTexture('roadTile', GAME_CONFIG.environmentTiles.road.tileWorldSize, { base: true });
     if (asphalt) this.fillTexture(asphalt, left, top, right - left, height);
     else {
       ctx.fillStyle = '#3b4045';
@@ -1930,6 +2084,92 @@ export class Game {
       if (this.getBridgeTowerRows(encounter).includes(y)) this.drawStJohnsTower(rowBottom);
       if (y === encounter.startY + 1) this.drawStJohnsSign(rowBottom);
     }
+  }
+
+  // Dappled shade from a theme's tree canopy, swaying gently over the land (not open water or the bridge).
+  drawCanopyShade() {
+    const canopy = this.theme?.environment?.canopy;
+    if (!canopy) return;
+    const texture = this.getTexture('canopy', canopy.tileWorldSize);
+    if (!texture) return;
+    const sway = Math.sin(this.time * 0.35) * canopy.sway * this.tile;
+    const from = Math.floor(this.cameraY) - 2;
+    const to = Math.ceil(this.cameraY + this.worldHeight / this.tile) + 2;
+    this.ctx.save();
+    this.ctx.globalAlpha = canopy.alpha;
+    for (let y = from; y <= to; y += 1) {
+      const lane = this.laneCache.get(y);
+      if (!lane || lane.terrainType === 'water') continue;
+      const { top, height } = this.getLaneScreenRect(y);
+      this.fillTexture(texture, 0, top, this.worldWidth, height, sway);
+    }
+    this.ctx.restore();
+  }
+
+  // Themes with bridgeFog: fog rolls in as the bridge comes into view, is thickest at the start and
+  // burns off between clearFrom and clearBy (shares of the bridge's length).
+  getBridgeFogTarget() {
+    const fog = this.theme?.bridgeFog;
+    if (!fog) return 0;
+    const row = Math.round(this.player.y);
+    let encounter = null;
+    for (let ahead = 0; ahead <= 8 && !encounter; ahead += 1) encounter = this.laneCache.get(row + ahead)?.bridgeEncounter;
+    if (!encounter) return 0;
+    const progress = (this.player.y - encounter.startY) / encounter.length;
+    const rollIn = clamp((progress + 0.25) / 0.25, 0, 1);
+    const burnOff = clamp((progress - fog.clearFrom) / (fog.clearBy - fog.clearFrom), 0, 1);
+    return fog.density * rollIn * (1 - burnOff * burnOff * (3 - 2 * burnOff));
+  }
+
+  drawBridgeFog() {
+    const amount = this.fogAmount;
+    const fog = this.theme?.bridgeFog;
+    if (!fog || amount < 0.01) return;
+    const ctx = this.ctx;
+    const height = this.worldHeight;
+
+    // A veil that is thicker ahead (up the screen) than around the player, so what is coming
+    // emerges out of the fog instead of being hidden right on top of you.
+    const playerShare = clamp((this.worldToScreen(0, this.player.drawY).y + this.tile * 0.5) / height, 0.1, 0.95);
+    const veil = ctx.createLinearGradient(0, 0, 0, height);
+    veil.addColorStop(0, `rgba(${fog.color}, ${amount})`);
+    veil.addColorStop(playerShare * 0.55, `rgba(${fog.color}, ${amount * 0.82})`);
+    veil.addColorStop(playerShare, `rgba(${fog.color}, ${amount * 0.3})`);
+    veil.addColorStop(1, `rgba(${fog.color}, ${amount * 0.22})`);
+    ctx.fillStyle = veil;
+    ctx.fillRect(0, 0, this.worldWidth, height);
+
+    // Drifting banks of fog.
+    const puff = this.getFogPuff(fog.color);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, amount * 1.3);
+    for (let i = 0; i < 9; i += 1) {
+      const radius = this.tile * (2.2 + (i % 3) * 0.9);
+      const span = this.worldWidth + radius * 2;
+      const drift = this.time * this.tile * (0.25 + hash01(i * 3.7 + 1) * 0.35);
+      const x = ((hash01(i * 1.618) * span + drift) % span) - radius;
+      const y = hash01(i * 7.31 + 2) * height * playerShare * 0.95;
+      ctx.drawImage(puff, x - radius, y - radius, radius * 2, radius * 2);
+    }
+    ctx.restore();
+  }
+
+  getFogPuff(color) {
+    const cacheKey = `fogPuff:${color}`;
+    let puff = this.paintCache.get(cacheKey);
+    if (puff) return puff;
+    puff = document.createElement('canvas');
+    puff.width = 128;
+    puff.height = 128;
+    const paint = puff.getContext('2d');
+    const gradient = paint.createRadialGradient(64, 64, 4, 64, 64, 64);
+    gradient.addColorStop(0, `rgba(${color}, 0.6)`);
+    gradient.addColorStop(0.6, `rgba(${color}, 0.25)`);
+    gradient.addColorStop(1, `rgba(${color}, 0)`);
+    paint.fillStyle = gradient;
+    paint.fillRect(0, 0, 128, 128);
+    this.paintCache.set(cacheKey, puff);
+    return puff;
   }
 
   drawStJohnsTower(baseY) {
@@ -2150,58 +2390,47 @@ export class Game {
     const ctx = this.ctx;
     for (const h of this.hazards) {
       if (!this.isRowOnScreen(h.y)) continue;
-      const profile = this.getMovingProfile(h.type);
-      const { x, y, width, height } = this.getMovingDrawRect(h, profile);
-
-      const sprite = this.vehicleSprites[h.type];
-      if (this.drawSpriteWithRenderProfile(sprite, { x, y, width, height }, h.type, { flipX: this.isEntityFlipped(h, profile) })) {
-        // image path drawn
-      } else {
-        if (h.type.startsWith('car')) {
-          ctx.fillStyle = '#9a4f3d';
-          ctx.fillRect(x, y, width, height);
-          ctx.fillStyle = '#cbd5e1';
-          ctx.fillRect(x + 10, y + 9, width * 0.3, 10);
-        } else if (h.type === 'scooter1') {
-          ctx.fillStyle = '#2c8f71';
-          ctx.fillRect(x, y + height * 0.35, width, height * 0.28);
-        } else if (h.type === 'bike1') {
-          ctx.fillStyle = '#59685a';
-          ctx.fillRect(x, y + height * 0.35, width, height * 0.22);
-        } else {
-          ctx.fillStyle = '#1e8a5a';
-          ctx.fillRect(x, y, width, height);
-        }
+      for (const shape of this.getEntityShapes(h)) {
+        const { x, y, width, height } = shape;
+        // Ground shadow under the visible pixels.
+        const span = this.collisionSystem.getVisibleSpan(shape);
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.beginPath();
+        ctx.ellipse((span.left + span.right) / 2, y + height * 0.92, (span.right - span.left) * 0.42, height * 0.07, 0, 0, Math.PI * 2);
+        ctx.fill();
+        if (this.drawShape(shape)) continue;
+        ctx.fillStyle = h.type === 'maxTrain' ? '#1e8a5a' : '#9a4f3d';
+        ctx.fillRect(x, y + height * 0.25, width, height * 0.5);
       }
-
-      ctx.fillStyle = 'rgba(0,0,0,0.22)';
-      ctx.fillRect(x + 6, y + height - 8, Math.max(10, width - 12), 5);
     }
   }
 
   drawCoins() {
     const ctx = this.ctx;
-    const coinSprite = this.collectibleSprites.coin;
+    const themed = this.theme?.collectible;
+    const coinSprite = themed ? this.activeThemeSprites.collectible.main : this.collectibleSprites.coin;
     for (const coin of this.coins) {
       const pos = this.worldToScreen(coin.x, coin.y);
       const visuals = GAME_CONFIG.coinVisuals;
       const bob = Math.sin(this.time * visuals.bobFrequencyHz + coin.bobSeed) * this.tile * visuals.bobAmplitudeRatio;
       const cx = (coin.x + 0.5) * this.tile;
       const cy = pos.y + this.tile * (0.45 + GAME_CONFIG.alignment.collectible.renderOffsetY) + bob;
-      const drawSize = this.tile * 0.34;
+      let drawWidth = this.tile * 0.34;
+      let drawHeight = drawWidth;
+      if (themed && coinSprite?.naturalWidth) {
+        drawHeight = this.tile * themed.height;
+        drawWidth = drawHeight * (coinSprite.naturalWidth / coinSprite.naturalHeight);
+      }
 
       ctx.save();
       ctx.fillStyle = `rgba(0, 0, 0, ${visuals.shadowAlpha})`;
       ctx.beginPath();
-      ctx.ellipse(cx, cy + this.tile * visuals.shadowOffsetRatio, drawSize * 0.24, drawSize * 0.12, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx, cy + Math.max(this.tile * visuals.shadowOffsetRatio, drawHeight * 0.45), drawWidth * 0.3, drawWidth * 0.12, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      if (coinSprite?.complete) {
-        this.drawSpriteWithRenderProfile(
-          coinSprite,
-          { x: cx - drawSize / 2, y: cy - drawSize / 2, width: drawSize, height: drawSize },
-          'coin'
-        );
+      const coinRect = { x: cx - drawWidth / 2, y: cy - drawHeight / 2, width: drawWidth, height: drawHeight };
+      if (coinSprite?.complete && coinSprite.naturalWidth) {
+        this.drawSpriteWithRenderProfile(coinSprite, coinRect, themed ? 'themeCollectible' : 'coin');
       } else {
         const r = this.tile * 0.16;
         ctx.fillStyle = '#e5c15f';
@@ -2240,7 +2469,7 @@ export class Game {
       this.drawSuperJumpEnergy(x + w / 2, y + h * 0.48, w, h, this.player.superJumpEnergy ?? 0);
     }
 
-    if (!this.drawSpriteWithRenderProfile(this.getPlayerSprite(), { x, y, width: w, height: h }, 'player')) {
+    if (!this.drawSpriteWithRenderProfile(this.getPlayerSprite(), { x, y, width: w, height: h }, this.getPlayerRenderKey())) {
       ctx.fillStyle = '#f4a261';
       ctx.fillRect(x, y, w, h);
     }
@@ -2352,12 +2581,12 @@ export class Game {
     const entries = [{ shape: this.getPlayerShape(), color: color(245, 219, 111), showMask: true }];
     for (const h of this.hazards) {
       if (!this.isRowOnScreen(h.y)) continue;
-      entries.push({ shape: this.getEntityShape(h), color: color(238, 104, 104), showMask: nearPlayer(h.y) });
+      for (const shape of this.getEntityShapes(h)) entries.push({ shape, color: color(238, 104, 104), showMask: nearPlayer(h.y) });
     }
     for (const p of this.platforms) {
       if (!this.isRowOnScreen(p.y)) continue;
       const attached = p.id === this.attachedPlatformId;
-      entries.push({ shape: this.getEntityShape(p), color: attached ? color(107, 236, 146) : color(111, 214, 170), showMask: nearPlayer(p.y) });
+      entries.push({ shape: this.getEntityShapes(p)[0], color: attached ? color(107, 236, 146) : color(111, 214, 170), showMask: nearPlayer(p.y) });
     }
     this.collisionSystem.drawDebug(this.ctx, entries);
 

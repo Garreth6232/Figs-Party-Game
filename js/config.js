@@ -786,6 +786,72 @@ export const GAME_CONFIG = {
   }
 };
 
+// Game modes. A mode with a theme plays exactly the same; the theme only swaps the art.
+// Sizes are in tiles; sprite widths follow each image's own shape.
+const crow = (index, facing) => ({ path: `assets/brother/crows/crow${index}.png`, facing });
+export const GAME_THEMES = {
+  brother: {
+    key: 'brother',
+    collectibleLabel: 'Babies',
+    collectibleName: 'babies',
+    player: {
+      sprites: {
+        forward: 'assets/brother/player/heroForward.png',
+        back: 'assets/brother/player/heroBack.png',
+        left: 'assets/brother/player/heroLeft.png',
+        right: 'assets/brother/player/heroRight.png',
+        superJump: 'assets/brother/player/heroSJ.png'
+      },
+      height: 0.92
+    },
+    collectible: { path: 'assets/brother/collectibles/brother.png', height: 0.56 },
+    // Every vehicle is a crow, picked at random per spawn. facing: which way the bird looks in
+    // the art; it is mirrored to face the way it travels.
+    obstacles: {
+      height: 0.82,
+      maxWidth: 1.25,
+      offsetY: -0.04,
+      // The MAX becomes a flock of this many crows sweeping across the track.
+      flockSize: 4,
+      flockSpacing: 1.05,
+      pool: [
+        crow(1, 'left'), crow(2, 'left'), crow(3, 'right'), crow(4, 'left'), crow(5, 'right'),
+        crow(6, 'right'), crow(7, 'right'), crow(8, 'right'), crow(9, 'right'), crow(10, 'right'),
+        crow(11, 'right'), crow(12, 'right'), crow(13, 'right'), crow(14, 'right')
+      ]
+    },
+    deathMessages: {
+      car: 'the crows got you :(',
+      train: 'a whole murder of crows!'
+    },
+    // A forest instead of the city: forest floor for grass, dirt trails for roads, undergrowth for
+    // sidewalks, a darker creek, trees instead of city props, and dappled canopy shade.
+    environment: {
+      textures: {
+        grassTile: 'assets/brother/environment/forestFloor.jpg',
+        roadTile: 'assets/brother/environment/trail.jpg',
+        sidewalkTile: 'assets/brother/environment/undergrowth.jpg'
+      },
+      grassTint: 'rgba(6, 16, 8, 0.12)',
+      waterTint: 'rgba(8, 38, 30, 0.5)',
+      railTint: 'rgba(18, 36, 14, 0.38)',
+      // 'painted' (dashed road lines) or 'soft' (a worn edge between trail rows)
+      laneDividers: 'soft',
+      canopy: { path: 'assets/brother/environment/canopyShade.png', tileWorldSize: 7, alpha: 0.55, sway: 0.15 },
+      props: 'forest'
+    },
+    // The St. Johns Bridge starts on one of these rows, i.e. within the first ~15 points of a run.
+    firstBridgeStartRange: [8, 13],
+    // Fog rolls over the St. Johns Bridge as you start across and burns off by the halfway point.
+    bridgeFog: {
+      density: 0.62,
+      clearFrom: 0.25,
+      clearBy: 0.5,
+      color: '206, 214, 219'
+    }
+  }
+};
+
 for (const carKey of ['car1', 'car2', 'car3']) {
   GAME_CONFIG.movingEntities.profiles[carKey] = scaleRenderProfile(GAME_CONFIG.movingEntities.profiles[carKey], MOVING_ENTITY_TUNING.carRenderScale);
 }

@@ -14,11 +14,12 @@ export const DEATH_CAUSES = Object.freeze({
   GENERIC: 'generic'
 });
 
-export function getDeathMessage(cause = DEATH_CAUSES.GENERIC) {
-  if (cause === DEATH_CAUSES.TRAIN) return DEATH_MESSAGES.train;
-  if (cause === DEATH_CAUSES.RIVER || cause === DEATH_CAUSES.OFF_PLATFORM) return DEATH_MESSAGES.river;
-  if (cause === DEATH_CAUSES.CAR || cause === DEATH_CAUSES.CRUSHED) return DEATH_MESSAGES.car;
-  return DEATH_MESSAGES.car;
+// overrides: a theme's own messages, e.g. { car: '...', train: '...' }
+export function getDeathMessage(cause = DEATH_CAUSES.GENERIC, overrides = {}) {
+  const messages = { ...DEATH_MESSAGES, ...overrides };
+  if (cause === DEATH_CAUSES.TRAIN) return messages.train;
+  if (cause === DEATH_CAUSES.RIVER || cause === DEATH_CAUSES.OFF_PLATFORM) return messages.river;
+  return messages.car;
 }
 
 export { DEATH_MESSAGES };

@@ -41,6 +41,14 @@ a game where you play as my cat, Fig
 - Super jump (20 lanes) on `J`, `Space`, or touch `SUPER` button
 - MAX train with crossing-light warnings, road traffic, near-miss scoring, particles, rain
 - Rare St. Johns Bridge encounter: Gothic towers, green steel girders, oncoming traffic
+- **Save Your Brother** mode: the same game re-skinned as a forest, with a new hero, babies to
+  collect, crows instead of traffic, and a foggy St. Johns Bridge right at the start
+
+## Adding a themed mode
+
+Modes live in `GAME_THEMES` in `js/config.js` and only swap art; gameplay is shared. A theme lists
+its hero sprites, collectible, a pool of obstacle sprites (each with the way it faces), optional
+replacement ground textures, and extras like bridge fog. Theme art lives in `assets/<theme>/`.
 - Keyboard controls, plus tap-to-hop, swipe-to-move, and on-screen Pause / Super buttons on phones
 - Arcade-style top-10 leaderboard with optional initials entry or instant new-game flow
 - Fully static-site compatible (works from `index.html` or GitHub Pages)

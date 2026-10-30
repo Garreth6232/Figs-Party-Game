@@ -167,22 +167,35 @@ window.addEventListener('keydown', (event) => {
   setInfoOpen(false);
 });
 
-const beginRun = () => {
-  game.start();
+const brotherBtn = document.getElementById('brotherBtn');
+const collectibleLabel = document.querySelector('#coinCard span');
+
+// Play Again / New Game replay whichever mode was picked last.
+let currentMode = 'fig';
+const beginRun = (mode = currentMode) => {
+  currentMode = mode;
+  game.start(mode);
+  collectibleLabel.textContent = game.theme?.collectibleLabel ?? 'Pickles';
   pendingLeaderboardEntry = false;
   latestLeaderboardEntryId = null;
   ui.hideAllOverlays();
   audio.play('ui');
 };
-startBtn.addEventListener('click', beginRun);
-restartBtn.addEventListener('click', beginRun);
+startBtn.addEventListener('click', () => beginRun('fig'));
+brotherBtn.addEventListener('click', () => beginRun('brother'));
+restartBtn.addEventListener('click', () => beginRun());
 
-const startLabel = startBtn.textContent;
-startBtn.disabled = true;
-startBtn.textContent = 'Loading…';
+const modeButtons = [startBtn, brotherBtn];
+const modeLabels = modeButtons.map((button) => button.textContent);
+modeButtons.forEach((button) => {
+  button.disabled = true;
+  button.textContent = 'Loading…';
+});
 game.assetsReady.then(() => {
-  startBtn.disabled = false;
-  startBtn.textContent = startLabel;
+  modeButtons.forEach((button, index) => {
+    button.disabled = false;
+    button.textContent = modeLabels[index];
+  });
   if (!ui.startScreen.classList.contains('hidden')) startBtn.focus();
 });
 

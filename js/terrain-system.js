@@ -70,10 +70,12 @@ export const TERRAIN_VISUAL_RULES = Object.freeze({
 });
 
 export class TerrainSystem {
-  constructor({ gameConfig, laneDefinitions, worldSeed = 1 }) {
+  // firstBridgeStartRange: [minRow, maxRow] to force the first bridge to begin early (a theme option).
+  constructor({ gameConfig, laneDefinitions, worldSeed = 1, firstBridgeStartRange = null }) {
     this.config = gameConfig;
     this.laneDefinitions = laneDefinitions;
     this.worldSeed = worldSeed;
+    this.firstBridgeStartRange = firstBridgeStartRange;
     this.zoneSpan = Math.max(1, Math.floor(this.config.generation?.zoneSpan ?? 3));
     this.generationState = {
       zoneCache: new Map(),
@@ -91,6 +93,12 @@ export class TerrainSystem {
 
   buildFirstBridgeEncounter() {
     const bridge = this.config.bridgeEncounter;
+    if (this.firstBridgeStartRange) {
+      const [minStart, maxStart] = this.firstBridgeStartRange;
+      const startY = minStart + Math.floor(hash01(this.worldSeed * 5.11 + 0.71) * (maxStart - minStart + 1));
+      const length = bridge.lengthMin + Math.floor(hash01(this.worldSeed * 6.41 + 1.37) * (bridge.lengthMax - bridge.lengthMin + 1));
+      return { id: 'bridge-first-guaranteed', regionIndex: -1, startY, endY: startY + length - 1, length };
+    }
     const maxDistance = Math.max(0, Math.floor(bridge.firstBridgeMaxDistance ?? 0));
     if (maxDistance <= 0) return null;
 
