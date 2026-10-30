@@ -74,6 +74,7 @@ export class Game {
     this.mode = 'fig';
     this.theme = null;
     this.fogAmount = 0;
+    this.zoom = 1;
     this.superJumpVisualTimer = 0;
     this.superJumpState = null;
     this.collisionSystem = new CollisionSystem();
@@ -253,6 +254,7 @@ export class Game {
     this.pruneTimer = 0;
     this.time = 0;
     this.fogAmount = 0;
+    this.zoom = 1;
     this.superJumpVisualTimer = 0;
     this.superJumpState = null;
     this.cameraY = this.player.y - this.runtimeCameraOffsetRows;
@@ -1225,7 +1227,7 @@ export class Game {
 
   // Only lanes near the camera move; lanes further ahead are pre-filled and wait their turn.
   getSimulationRange() {
-    const rowsOnScreen = Math.ceil(this.worldHeight / this.tile);
+    const rowsOnScreen = Math.ceil(this.getViewRows());
     return { min: Math.floor(this.cameraY) - 3, max: Math.ceil(this.cameraY) + rowsOnScreen + 4 };
   }
 
@@ -1459,6 +1461,7 @@ export class Game {
     const cameraFollow = 1 - Math.pow(1 - GAME_CONFIG.cameraLerp, dt * 60);
     this.cameraY += (this.player.y - this.runtimeCameraOffsetRows - this.cameraY) * cameraFollow;
     this.fogAmount += (this.getBridgeFogTarget() - this.fogAmount) * (1 - Math.pow(0.94, dt * 60));
+    this.zoom += (this.getZoomTarget() - this.zoom) * (1 - Math.pow(0.95, dt * 60));
 
     const difficulty = this.getDifficulty();
     const active = this.getSimulationRange();
@@ -1729,6 +1732,18 @@ export class Game {
     const shakeY = (Math.random() - 0.5) * this.shake;
     ctx.save();
     ctx.translate(shakeX, shakeY);
+    // Zoom out around the bottom-centre of the screen; the extra width at the sides and extra
+    // rows at the top are covered by drawing lanes across the whole view.
+    const zoom = this.zoom;
+    if (zoom < 0.999) {
+      ctx.translate(this.worldWidth / 2, this.worldHeight);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-this.worldWidth / 2, -this.worldHeight);
+    }
+    const margin = (this.worldWidth / zoom - this.worldWidth) / 2;
+    this.viewLeft = -margin - 2;
+    this.viewWidth = this.worldWidth + margin * 2 + 4;
+    this.viewTop = this.worldHeight - this.worldHeight / zoom - 2;
     this.drawLanes();
     this.drawPlatforms();
     this.drawHazards();
@@ -1742,6 +1757,20 @@ export class Game {
     this.drawCollisionDebug();
     this.drawTerrainDebug();
     ctx.restore();
+  }
+
+  // How many rows fit on screen at the current zoom.
+  getViewRows() {
+    return this.worldHeight / (this.tile * this.zoom);
+  }
+
+  // Zoom out a little while the player is on (or just about to reach) the St. Johns Bridge.
+  getZoomTarget() {
+    const row = Math.round(this.player.y);
+    for (let ahead = -1; ahead <= 3; ahead += 1) {
+      if (this.laneCache.get(row + ahead)?.bridgeEncounter) return GAME_CONFIG.stJohnsBridge.zoom;
+    }
+    return 1;
   }
 
   worldToScreen(x, y) {
@@ -1801,10 +1830,10 @@ export class Game {
   drawGrassLane({ lane, top, height }) {
     const style = GAME_CONFIG.environmentTiles.grass;
     const texture = this.getTexture('grassTile', style.tileWorldSize);
-    if (texture) this.fillTexture(texture, 0, top, this.worldWidth, height);
+    if (texture) this.fillTexture(texture, this.viewLeft, top, this.viewWidth, height);
     // A soft wash calms the photo grass so Fig and the pickles stand out from it.
     this.ctx.fillStyle = this.theme?.environment?.grassTint ?? style.tint;
-    this.ctx.fillRect(0, top, this.worldWidth, height);
+    this.ctx.fillRect(this.viewLeft, top, this.viewWidth, height);
     this.drawConnectedLaneShading(lane, top, height, {
       capTop: 'rgba(8, 16, 8, 0.3)',
       capBottom: 'rgba(8, 16, 8, 0.28)'
@@ -1815,7 +1844,7 @@ export class Game {
     const ctx = this.ctx;
     const style = GAME_CONFIG.environmentTiles.road;
     const asphalt = this.getTexture('roadTile', style.tileWorldSize);
-    if (asphalt) this.fillTexture(asphalt, 0, top, this.worldWidth, height);
+    if (asphalt) this.fillTexture(asphalt, this.viewLeft, top, this.viewWidth, height);
 
     // Sidewalks run only along the outside of a road; lanes inside it share a dashed divider.
     const curbHeight = Math.max(2, Math.round(height * style.sidewalkHeightRatio));
@@ -1824,20 +1853,20 @@ export class Game {
     if (!lane.connectedContext?.north) edges.push({ y: top, shadowY: top + curbHeight });
     if (!lane.connectedContext?.south) edges.push({ y: top + height - curbHeight, shadowY: top + height - curbHeight - 2 });
     for (const edge of edges) {
-      if (sidewalk) this.fillTexture(sidewalk, 0, edge.y, this.worldWidth, curbHeight);
+      if (sidewalk) this.fillTexture(sidewalk, this.viewLeft, edge.y, this.viewWidth, curbHeight);
       else {
         ctx.fillStyle = '#8d8a84';
-        ctx.fillRect(0, edge.y, this.worldWidth, curbHeight);
+        ctx.fillRect(this.viewLeft, edge.y, this.viewWidth, curbHeight);
       }
       ctx.fillStyle = 'rgba(18, 20, 22, 0.55)';
-      ctx.fillRect(0, edge.shadowY, this.worldWidth, 2);
+      ctx.fillRect(this.viewLeft, edge.shadowY, this.viewWidth, 2);
     }
 
     const dividers = this.theme?.environment?.laneDividers ?? 'painted';
     if (lane.connectedContext?.north && dividers === 'soft') {
       // Trails have no paint, just a worn edge between rows.
       ctx.fillStyle = 'rgba(28, 18, 8, 0.35)';
-      ctx.fillRect(0, top, this.worldWidth, Math.max(2, Math.round(this.tile * 0.05)));
+      ctx.fillRect(this.viewLeft, top, this.viewWidth, Math.max(2, Math.round(this.tile * 0.05)));
     }
     if (lane.connectedContext?.north && dividers === 'painted') {
       const lineWidth = Math.max(1.5, this.tile * 0.045);
@@ -1846,8 +1875,8 @@ export class Game {
       ctx.setLineDash([this.tile * 0.38, this.tile * 0.42]);
       ctx.lineDashOffset = 0;
       ctx.beginPath();
-      ctx.moveTo(0, top + lineWidth / 2);
-      ctx.lineTo(this.worldWidth, top + lineWidth / 2);
+      ctx.moveTo(this.viewLeft, top + lineWidth / 2);
+      ctx.lineTo(this.viewLeft + this.viewWidth, top + lineWidth / 2);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -1859,12 +1888,12 @@ export class Game {
     const texture = this.getTexture('riverTile', style.tileWorldSize);
     // Each river lane's water drifts with its own current, so you can read which way the boats go.
     const drift = lane.type === 'water' ? this.time * lane.speed * lane.direction * style.flowFactor * this.tile : 0;
-    if (texture) this.fillTexture(texture, 0, top, this.worldWidth, height, drift);
+    if (texture) this.fillTexture(texture, this.viewLeft, top, this.viewWidth, height, drift);
     ctx.fillStyle = this.theme?.environment?.waterTint ?? style.tint;
-    ctx.fillRect(0, top, this.worldWidth, height);
+    ctx.fillRect(this.viewLeft, top, this.viewWidth, height);
     if (lane.type === 'water' && lane.connectedContext?.north) {
       ctx.fillStyle = 'rgba(214, 236, 246, 0.1)';
-      ctx.fillRect(0, top, this.worldWidth, 1);
+      ctx.fillRect(this.viewLeft, top, this.viewWidth, 1);
     }
     this.drawConnectedLaneShading(lane, top, height, {
       capTop: 'rgba(8, 18, 26, 0.5)',
@@ -1873,18 +1902,18 @@ export class Game {
     // A thin line of foam where the river meets the bank.
     ctx.fillStyle = 'rgba(226, 242, 248, 0.22)';
     const edgeHeight = Math.max(1, Math.round(height * 0.12));
-    if (!lane.connectedContext?.north) ctx.fillRect(0, top + edgeHeight, this.worldWidth, 2);
-    if (!lane.connectedContext?.south) ctx.fillRect(0, top + height - edgeHeight - 2, this.worldWidth, 2);
+    if (!lane.connectedContext?.north) ctx.fillRect(this.viewLeft, top + edgeHeight, this.viewWidth, 2);
+    if (!lane.connectedContext?.south) ctx.fillRect(this.viewLeft, top + height - edgeHeight - 2, this.viewWidth, 2);
   }
 
   drawRailLane({ lane, top, height }) {
     const texture = this.getTexture('railTile', GAME_CONFIG.environmentTiles.rail.tileWorldSize);
     // The photo already has the ties and rails; one copy is sized to exactly one lane tall.
-    if (texture) this.fillTexture(texture, 0, top, this.worldWidth, height, 0, top);
+    if (texture) this.fillTexture(texture, this.viewLeft, top, this.viewWidth, height, 0, top);
     const railTint = this.theme?.environment?.railTint;
     if (railTint) {
       this.ctx.fillStyle = railTint;
-      this.ctx.fillRect(0, top, this.worldWidth, height);
+      this.ctx.fillRect(this.viewLeft, top, this.viewWidth, height);
     }
     this.drawTrainWarning(lane, top, height);
     this.drawConnectedLaneShading(lane, top, height, {
@@ -1904,7 +1933,7 @@ export class Game {
 
     const pulse = 0.5 + 0.5 * Math.sin(this.time * Math.PI * 2 * (2.2 + urgency * 4.5));
     ctx.fillStyle = `rgba(214, 38, 38, ${0.1 + (0.14 + 0.16 * urgency) * pulse})`;
-    ctx.fillRect(0, top, this.worldWidth, height);
+    ctx.fillRect(this.viewLeft, top, this.viewWidth, height);
 
     const chevronHeight = height * 0.34;
     const spacing = this.tile * 0.9;
@@ -2076,7 +2105,7 @@ export class Game {
   drawBridgeOverlays() {
     // Towers rise several rows above their base, so look a few rows below the screen too.
     const from = Math.floor(this.cameraY) - Math.ceil(GAME_CONFIG.stJohnsBridge.towerHeight) - 2;
-    const to = Math.ceil(this.cameraY + this.worldHeight / this.tile) + 1;
+    const to = Math.ceil(this.cameraY + this.getViewRows()) + 1;
     for (let y = from; y <= to; y += 1) {
       const encounter = this.laneCache.get(y)?.bridgeEncounter;
       if (!encounter) continue;
@@ -2094,14 +2123,14 @@ export class Game {
     if (!texture) return;
     const sway = Math.sin(this.time * 0.35) * canopy.sway * this.tile;
     const from = Math.floor(this.cameraY) - 2;
-    const to = Math.ceil(this.cameraY + this.worldHeight / this.tile) + 2;
+    const to = Math.ceil(this.cameraY + this.getViewRows()) + 2;
     this.ctx.save();
     this.ctx.globalAlpha = canopy.alpha;
     for (let y = from; y <= to; y += 1) {
       const lane = this.laneCache.get(y);
       if (!lane || lane.terrainType === 'water') continue;
       const { top, height } = this.getLaneScreenRect(y);
-      this.fillTexture(texture, 0, top, this.worldWidth, height, sway);
+      this.fillTexture(texture, this.viewLeft, top, this.viewWidth, height, sway);
     }
     this.ctx.restore();
   }
@@ -2131,13 +2160,13 @@ export class Game {
     // A veil that is thicker ahead (up the screen) than around the player, so what is coming
     // emerges out of the fog instead of being hidden right on top of you.
     const playerShare = clamp((this.worldToScreen(0, this.player.drawY).y + this.tile * 0.5) / height, 0.1, 0.95);
-    const veil = ctx.createLinearGradient(0, 0, 0, height);
+    const veil = ctx.createLinearGradient(0, this.viewTop, 0, height);
     veil.addColorStop(0, `rgba(${fog.color}, ${amount})`);
     veil.addColorStop(playerShare * 0.55, `rgba(${fog.color}, ${amount * 0.82})`);
     veil.addColorStop(playerShare, `rgba(${fog.color}, ${amount * 0.3})`);
     veil.addColorStop(1, `rgba(${fog.color}, ${amount * 0.22})`);
     ctx.fillStyle = veil;
-    ctx.fillRect(0, 0, this.worldWidth, height);
+    ctx.fillRect(this.viewLeft, this.viewTop, this.viewWidth, height - this.viewTop);
 
     // Drifting banks of fog.
     const puff = this.getFogPuff(fog.color);
@@ -2292,18 +2321,18 @@ export class Game {
     const edgeHeight = Math.max(1, Math.round(laneHeight * 0.12));
     if (!lane.connectedContext?.north) {
       ctx.fillStyle = capTop;
-      ctx.fillRect(0, laneY, this.worldWidth, edgeHeight);
+      ctx.fillRect(this.viewLeft, laneY, this.viewWidth, edgeHeight);
     }
     if (!lane.connectedContext?.south) {
       ctx.fillStyle = capBottom;
-      ctx.fillRect(0, laneY + laneHeight - edgeHeight, this.worldWidth, edgeHeight);
+      ctx.fillRect(this.viewLeft, laneY + laneHeight - edgeHeight, this.viewWidth, edgeHeight);
     }
   }
 
   drawLanes() {
     const ctx = this.ctx;
     const from = Math.floor(this.cameraY) - 2;
-    const to = Math.ceil(this.cameraY + this.worldHeight / this.tile) + 2;
+    const to = Math.ceil(this.cameraY + this.getViewRows()) + 2;
     const propsToRender = [];
 
     for (let y = from; y <= to; y += 1) {
@@ -2314,7 +2343,7 @@ export class Game {
       const { top, height } = this.getLaneScreenRect(y);
       const args = { lane, top, height, y };
       ctx.fillStyle = GAME_CONFIG.lanePalette[lane.terrainType];
-      ctx.fillRect(0, top, this.worldWidth, height);
+      ctx.fillRect(this.viewLeft, top, this.viewWidth, height);
 
       if (lane.type === 'bridgeEncounter') this.drawBridgeLane(args);
       else if (lane.terrainType === 'road') this.drawRoadLane(args);
@@ -2547,7 +2576,7 @@ export class Game {
     ctx.stroke();
 
     ctx.fillStyle = 'rgba(41, 52, 59, 0.2)';
-    ctx.fillRect(0, 0, this.worldWidth, this.worldHeight);
+    ctx.fillRect(this.viewLeft, this.viewTop, this.viewWidth, this.worldHeight - this.viewTop);
   }
 
   drawTerrainDebug() {

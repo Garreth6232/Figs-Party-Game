@@ -599,6 +599,8 @@ export const GAME_CONFIG = {
     // Where the two Gothic towers stand, as a share of the bridge's length.
     towerAt: [0.22, 0.78],
     towerHeight: 4.4,
+    // Camera zoom while on the bridge (1 = normal; lower shows more of the bridge).
+    zoom: 0.75,
     colors: { main: '#3f7f69', light: '#6fae95', dark: '#244a3e' }
   },
   coinVisuals: {
