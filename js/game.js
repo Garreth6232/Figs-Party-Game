@@ -86,18 +86,33 @@ export class Game {
   }
 
   loadSprites() {
+    // One Image per file (car1.png backs four vehicle types), and a promise that settles once every
+    // file has loaded and been decoded, so a run never starts while textures are still popping in.
+    const imagesBySrc = new Map();
+    const pending = [];
     const registerImage = (bucket, key, src) => {
       if (!src || typeof src !== 'string') return;
-      const image = new Image();
-      image.src = src;
-      image.decoding = 'async';
-      image.loading = 'eager';
-      image.onerror = () => {
-        const record = `${key}:${src}`;
-        this.missingAssets.add(record);
-        console.warn(`[Asset Missing] ${record}`);
-      };
-      bucket[key] = image;
+      let entry = imagesBySrc.get(src);
+      if (!entry) {
+        const image = new Image();
+        entry = { image, keys: [] };
+        imagesBySrc.set(src, entry);
+        pending.push(new Promise((resolve) => {
+          image.onload = () => {
+            if (typeof image.decode === 'function') image.decode().catch(() => {}).then(resolve);
+            else resolve();
+          };
+          image.onerror = () => {
+            for (const assetKey of entry.keys) this.missingAssets.add(`${assetKey}:${src}`);
+            console.warn(`[Asset Missing] ${entry.keys.join(', ')}: ${src}`);
+            resolve();
+          };
+        }));
+        image.decoding = 'async';
+        image.src = src;
+      }
+      entry.keys.push(key);
+      bucket[key] = entry.image;
     };
 
     const sprites = ASSET_MANIFEST.player;
@@ -143,6 +158,9 @@ export class Game {
     for (const [key, src] of Object.entries(ASSET_MANIFEST.hazards)) {
       registerImage(this.hazardSprites, key, src);
     }
+
+    const loadTimeout = new Promise((resolve) => setTimeout(resolve, GAME_CONFIG.assetLoadTimeoutMs));
+    this.assetsReady = Promise.race([Promise.all(pending), loadTimeout]);
   }
 
   resize() {
@@ -157,7 +175,7 @@ export class Game {
     this.worldWidth = rect.width;
     this.worldHeight = rect.height;
     this.tile = this.worldWidth / GAME_CONFIG.cols;
-    this.laneGradients = new Map();
+    this.paintCache = new Map();
     this.seedRain();
   }
 
@@ -750,6 +768,7 @@ export class Game {
   }
 
   generateLaneProps(lane) {
+    if (this.propRuntime.reservedRows?.has(lane.y)) return [];
     const laneDef = this.getLaneDefinition(lane.type);
     const props = [];
     const laneAssetKeys = new Set();
@@ -796,7 +815,9 @@ export class Game {
       }
     }
 
-    if (!this.propRuntime.landmarksSpawned.has('portland') && lane.y === this.propRuntime.earlyLandmarkY && ['grass', 'road'].includes(laneDef.key)) {
+    // Landmarks go on the first grass lane at or past their target row (not only that exact row),
+    // and Powell's, which stands three rows tall, waits for three grass rows in a row.
+    if (!this.propRuntime.landmarksSpawned.has('portland') && lane.y >= this.propRuntime.earlyLandmarkY && laneDef.key === 'grass') {
       const profile = GAME_CONFIG.props.render.portlandOregonSign;
       const landmark = this.createDecorProp('portlandOregonSign', lane, { ...profile, anchor: 'left', edgePadding: 0.18, zIndex: 3 });
       if (landmark) {
@@ -806,13 +827,15 @@ export class Game {
       }
     }
 
-    if (!this.propRuntime.landmarksSpawned.has('bookstore') && lane.y === this.propRuntime.bookstoreY && ['grass', 'road'].includes(laneDef.key)) {
+    const grassAbove = (rows) => Array.from({ length: rows }, (_, i) => this.terrainSystem.laneTypeForY(lane.y + 1 + i)).every((type) => type === 'grass');
+    if (!this.propRuntime.landmarksSpawned.has('bookstore') && lane.y >= this.propRuntime.bookstoreY && laneDef.key === 'grass' && grassAbove(2)) {
       const profile = GAME_CONFIG.props.render.bookstore1;
       const landmark = this.createDecorProp('bookstore1', lane, { ...profile, anchor: 'right', edgePadding: 0.05, zIndex: 0 });
       if (landmark) {
         this.propRuntime.landmarksSpawned.add('bookstore');
-        props.push(landmark);
-        laneAssetKeys.add('bookstore1');
+        // Powell's fills its row and the two above, so nothing else is planted in front of it.
+        this.propRuntime.reservedRows = new Set([lane.y + 1, lane.y + 2]);
+        return [landmark];
       }
     }
 
@@ -906,7 +929,9 @@ export class Game {
   }
 
   ensureLane(y) {
-    if (this.laneCache.has(y)) return;
+    // Lanes only exist on whole rows. (Mid super jump Fig's row is fractional, which used to
+    // create half-row lanes whose boats and cars floated over the grass.)
+    if (!Number.isInteger(y) || this.laneCache.has(y)) return;
     const lane = this.terrainSystem.createLane(y, this.score);
     lane.decorProps = this.generateLaneProps(lane);
     if (lane.type === 'water' && GAME_CONFIG.riverPlatforms.alternateDirections) {
@@ -1046,10 +1071,14 @@ export class Game {
   updateRailLane(lane, dt, difficulty) {
     lane.timer += dt;
     const interval = Math.max(3.35, lane.interval / difficulty);
-    lane.warningActive = interval - lane.timer <= lane.warningLead;
+    const untilSpawn = interval - lane.timer;
+    const wasActive = lane.warningActive;
+    lane.warningActive = untilSpawn <= lane.warningLead;
+    if (lane.warningActive && !wasActive && Math.abs(lane.y - this.player.y) <= 5) this.audio.play('trainBell');
     this.trainWarnings.set(lane.y, {
       active: lane.warningActive,
-      phase: Math.sin(this.time * GAME_CONFIG.trainWarning.flashHz * Math.PI * 2)
+      urgency: clamp(1 - untilSpawn / lane.warningLead, 0, 1),
+      direction: lane.direction
     });
     if (lane.timer >= interval) {
       lane.timer = 0;
@@ -1157,7 +1186,7 @@ export class Game {
     const playerOnBridge = this.getBridgeEncounterStateByPlayerLane().lane?.type === 'bridgeEncounter';
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      const y = this.player.y + Math.floor(this.runRng.range(GAME_CONFIG.coins.spawnAheadMin, GAME_CONFIG.coins.spawnAheadMax));
+      const y = Math.round(this.player.y) + Math.floor(this.runRng.range(GAME_CONFIG.coins.spawnAheadMin, GAME_CONFIG.coins.spawnAheadMax));
       this.ensureLane(y);
       const lane = this.laneCache.get(y);
       if (!lane) continue;
@@ -1565,6 +1594,7 @@ export class Game {
     this.drawHazards();
     this.drawCoins();
     this.drawPlayer();
+    this.drawBridgeOverlays();
     this.drawParticles();
     this.drawRain();
     this.drawCollisionDebug();
@@ -1584,208 +1614,432 @@ export class Game {
     return Math.max(1, Math.round(this.tile));
   }
 
-  drawLaneTexture(sprite, { y, height, fallbackColor, laneY = null, anchorX = 0, anchorY = null, tileScale = 1 }) {
-    const ctx = this.ctx;
-    const tileSettings = GAME_CONFIG.environmentTiles;
-    const snap = tileSettings.snapToPixels !== false;
-    const overlap = Math.max(0, Math.round(tileSettings.overlapPx ?? 0));
-    const drawY = snap ? Math.round(y) : y;
-    const drawHeight = Math.max(1, (snap ? Math.round(height) : height) + overlap);
-
-    if (!sprite?.complete || !sprite.naturalWidth || !sprite.naturalHeight) {
-      ctx.fillStyle = fallbackColor;
-      ctx.fillRect(0, drawY, this.worldWidth, drawHeight);
-      return;
-    }
-
-    const worldUnits = tileSettings.baseWorldUnits;
-    const tileHeight = Math.max(1, Math.round(drawHeight * (worldUnits.height ?? 1) * tileScale));
-    const tileWidth = Math.max(
-      1,
-      Math.round((worldUnits.width ?? 1) * tileHeight * (sprite.naturalWidth / sprite.naturalHeight) * tileScale)
-    );
-    const anchorWorldX = anchorX;
-    const anchorWorldY = anchorY ?? laneY ?? 0;
-    const firstTileX = -((((anchorWorldX * this.tile) % tileWidth) + tileWidth) % tileWidth);
-    const firstTileY = drawY - ((((anchorWorldY * this.tile) % tileHeight) + tileHeight) % tileHeight);
-
-    for (let x = firstTileX; x < this.worldWidth + tileWidth; x += tileWidth) {
-      ctx.drawImage(sprite, x, firstTileY, tileWidth, tileHeight);
-    }
+  // Exact pixel rows for a lane: its bottom is the next lane's top, so lanes never gap or overlap.
+  getLaneScreenRect(laneY) {
+    const top = this.getLaneScreenY(laneY);
+    return { top, height: this.getLaneScreenY(laneY - 1) - top };
   }
 
-  drawGrassLane({ lane, laneY, laneHeight, laneIndex }) {
-    const ctx = this.ctx;
-    const grassTile = this.environmentSprites.grassTile;
-    const grassStyle = GAME_CONFIG.environmentTiles.grass;
-    this.drawLaneTexture(grassTile, {
-      y: laneY,
-      laneY: laneIndex,
-      height: laneHeight,
-      fallbackColor: '#4a6047',
-      anchorY: 0,
-      tileScale: grassStyle.baseScale
-    });
-    this.drawLaneTexture(grassTile, {
-      y: laneY,
-      laneY: laneIndex,
-      height: laneHeight,
-      fallbackColor: '#4a6047',
-      anchorX: grassStyle.detailOffsetX,
-      anchorY: grassStyle.detailOffsetY,
-      tileScale: grassStyle.detailScale
-    });
+  // A canvas pattern of a ground texture pre-scaled to its on-screen size. Photos that do not tile
+  // on their own are mirrored 2x2 so every edge meets a matching edge. Filling a lane rectangle with
+  // a pattern can never spill into the next row (the old tiling drew grass 1.8 rows tall).
+  getTexture(key, worldWidth, { mirror = false } = {}) {
+    const image = this.environmentSprites[key];
+    if (!image?.complete || !image.naturalWidth) return null;
+    const cacheKey = `texture:${key}:${worldWidth}:${mirror}`;
+    let texture = this.paintCache.get(cacheKey);
+    if (texture) return texture;
 
-    const laneWorldY = laneIndex * this.tile;
-    this.fillLaneGradient('grassShade', [
-      [0, 'rgba(13, 26, 14, 0.26)'],
-      [0.5, 'rgba(55, 92, 50, 0.08)'],
-      [1, 'rgba(12, 24, 13, 0.2)']
-    ], laneY, laneHeight);
+    const tileW = Math.max(2, Math.round(worldWidth * this.tile * this.dpr));
+    const tileH = Math.max(2, Math.round((tileW * image.naturalHeight) / image.naturalWidth));
+    const canvas = document.createElement('canvas');
+    canvas.width = mirror ? tileW * 2 : tileW;
+    canvas.height = mirror ? tileH * 2 : tileH;
+    const paint = canvas.getContext('2d');
+    paint.imageSmoothingQuality = 'high';
+    const copies = mirror ? [[1, 1], [-1, 1], [1, -1], [-1, -1]] : [[1, 1]];
+    for (const [sx, sy] of copies) {
+      paint.setTransform(sx, 0, 0, sy, sx < 0 ? tileW * 2 : 0, sy < 0 ? tileH * 2 : 0);
+      paint.drawImage(image, 0, 0, tileW, tileH);
+    }
+    texture = { pattern: this.ctx.createPattern(canvas, 'repeat'), scale: 1 / this.dpr };
+    this.paintCache.set(cacheKey, texture);
+    return texture;
+  }
 
-    const undulation = Math.sin((laneWorldY + this.time * 12) * grassStyle.undulationFreq) * grassStyle.undulationAlpha;
-    const tonalAlpha = Math.max(0, grassStyle.tonalAlpha + undulation);
-    ctx.fillStyle = `rgba(170, 202, 141, ${tonalAlpha})`;
-    ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
+  // originX/originY pin the texture in screen space; by default it is pinned to the world, so it
+  // scrolls with the camera and joins up across neighbouring lanes.
+  fillTexture(texture, x, y, width, height, originX = 0, originY = this.worldToScreen(0, 0).y) {
+    texture.pattern.setTransform(new DOMMatrix([texture.scale, 0, 0, texture.scale, originX, originY]));
+    this.ctx.fillStyle = texture.pattern;
+    this.ctx.fillRect(x, y, width, height);
+  }
 
-    this.drawConnectedLaneShading(lane, laneY, laneHeight, {
+  drawGrassLane({ lane, top, height }) {
+    const style = GAME_CONFIG.environmentTiles.grass;
+    const texture = this.getTexture('grassTile', style.tileWorldSize);
+    if (texture) this.fillTexture(texture, 0, top, this.worldWidth, height);
+    // A soft wash calms the photo grass so Fig and the pickles stand out from it.
+    this.ctx.fillStyle = style.tint;
+    this.ctx.fillRect(0, top, this.worldWidth, height);
+    this.drawConnectedLaneShading(lane, top, height, {
       capTop: 'rgba(8, 16, 8, 0.3)',
       capBottom: 'rgba(8, 16, 8, 0.28)'
     });
   }
 
-  drawWaterLane({ lane, laneY, laneHeight, laneIndex }) {
+  drawRoadLane({ lane, top, height }) {
     const ctx = this.ctx;
-    const waterStyle = GAME_CONFIG.environmentTiles.water;
-    const waterTile = this.environmentSprites.riverTile;
-    const renderHeight = Math.max(1, Math.round(laneHeight * waterStyle.tileHeightRatio));
-    const yInset = Math.round((laneHeight - renderHeight) * 0.5);
-    this.drawLaneTexture(waterTile, {
-      y: laneY + yInset,
-      laneY: laneIndex,
-      height: renderHeight,
-      fallbackColor: '#34576d'
-    });
+    const style = GAME_CONFIG.environmentTiles.road;
+    const asphalt = this.getTexture('roadTile', style.tileWorldSize);
+    if (asphalt) this.fillTexture(asphalt, 0, top, this.worldWidth, height);
 
-    this.fillLaneGradient('waterShade', [
-      [0, 'rgba(16, 47, 66, 0.72)'],
-      [0.48, 'rgba(39, 102, 128, 0.2)'],
-      [1, 'rgba(13, 42, 60, 0.74)']
-    ], laneY, laneHeight);
-
-    const waveBase = laneY + laneHeight * 0.26;
-    const waveAmp = laneHeight * 0.08;
-    ctx.strokeStyle = `rgba(231, 243, 253, ${waterStyle.foamAlpha})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let x = 0; x <= this.worldWidth; x += 10) {
-      const waveY = waveBase + Math.sin(x * 0.02 + this.time * (2 + waterStyle.flowSpeed * 10) + lane.seed) * waveAmp;
-      if (x === 0) ctx.moveTo(x, waveY);
-      else ctx.lineTo(x, waveY);
+    // Sidewalks run only along the outside of a road; lanes inside it share a dashed divider.
+    const curbHeight = Math.max(2, Math.round(height * style.sidewalkHeightRatio));
+    const sidewalk = this.getTexture('sidewalkTile', style.sidewalkWorldSize, { mirror: true });
+    const edges = [];
+    if (!lane.connectedContext?.north) edges.push({ y: top, shadowY: top + curbHeight });
+    if (!lane.connectedContext?.south) edges.push({ y: top + height - curbHeight, shadowY: top + height - curbHeight - 2 });
+    for (const edge of edges) {
+      if (sidewalk) this.fillTexture(sidewalk, 0, edge.y, this.worldWidth, curbHeight);
+      else {
+        ctx.fillStyle = '#8d8a84';
+        ctx.fillRect(0, edge.y, this.worldWidth, curbHeight);
+      }
+      ctx.fillStyle = 'rgba(18, 20, 22, 0.55)';
+      ctx.fillRect(0, edge.shadowY, this.worldWidth, 2);
     }
-    ctx.stroke();
 
-    this.drawConnectedLaneShading(lane, laneY, laneHeight, {
+    if (lane.connectedContext?.north) {
+      const lineWidth = Math.max(1.5, this.tile * 0.045);
+      ctx.strokeStyle = 'rgba(238, 238, 230, 0.62)';
+      ctx.lineWidth = lineWidth;
+      ctx.setLineDash([this.tile * 0.38, this.tile * 0.42]);
+      ctx.lineDashOffset = 0;
+      ctx.beginPath();
+      ctx.moveTo(0, top + lineWidth / 2);
+      ctx.lineTo(this.worldWidth, top + lineWidth / 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  drawWaterLane({ lane, top, height }) {
+    const ctx = this.ctx;
+    const style = GAME_CONFIG.environmentTiles.water;
+    const texture = this.getTexture('riverTile', style.tileWorldSize);
+    // Each river lane's water drifts with its own current, so you can read which way the boats go.
+    const drift = lane.type === 'water' ? this.time * lane.speed * lane.direction * style.flowFactor * this.tile : 0;
+    if (texture) this.fillTexture(texture, 0, top, this.worldWidth, height, drift);
+    ctx.fillStyle = style.tint;
+    ctx.fillRect(0, top, this.worldWidth, height);
+    if (lane.type === 'water' && lane.connectedContext?.north) {
+      ctx.fillStyle = 'rgba(214, 236, 246, 0.1)';
+      ctx.fillRect(0, top, this.worldWidth, 1);
+    }
+    this.drawConnectedLaneShading(lane, top, height, {
       capTop: 'rgba(8, 18, 26, 0.5)',
       capBottom: 'rgba(8, 18, 26, 0.5)'
     });
+    // A thin line of foam where the river meets the bank.
+    ctx.fillStyle = 'rgba(226, 242, 248, 0.22)';
+    const edgeHeight = Math.max(1, Math.round(height * 0.12));
+    if (!lane.connectedContext?.north) ctx.fillRect(0, top + edgeHeight, this.worldWidth, 2);
+    if (!lane.connectedContext?.south) ctx.fillRect(0, top + height - edgeHeight - 2, this.worldWidth, 2);
   }
 
-  drawBridgeEncounterLane({ lane, laneY, laneHeight, laneIndex }) {
-    this.drawWaterLane({ lane, laneY, laneHeight, laneIndex });
-    const ctx = this.ctx;
-    const playableColumns = this.getBridgePlayableColumns();
-    const bridgeStartX = playableColumns[0] * this.tile;
-    const bridgeWidth = playableColumns.length * this.tile;
-
-    ctx.fillStyle = 'rgba(122, 100, 75, 0.88)';
-    ctx.fillRect(bridgeStartX, laneY, bridgeWidth, laneHeight);
-    ctx.strokeStyle = 'rgba(74, 54, 38, 0.8)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(bridgeStartX, laneY + 1, bridgeWidth, laneHeight - 2);
-
-    ctx.strokeStyle = 'rgba(240, 224, 192, 0.42)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 8]);
-    for (let i = 1; i < playableColumns.length; i += 1) {
-      const lineX = bridgeStartX + i * this.tile;
-      ctx.beginPath();
-      ctx.moveTo(lineX, laneY + 2);
-      ctx.lineTo(lineX, laneY + laneHeight - 2);
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-  }
-
-  drawRailLane({ lane, laneY, laneHeight, laneIndex }) {
-    const ctx = this.ctx;
-    const railStyle = GAME_CONFIG.environmentTiles.rail;
-    const ballastHeight = Math.max(4, Math.round(laneHeight * railStyle.ballastHeightRatio));
-    const ballastY = laneY + Math.round((laneHeight - ballastHeight) * 0.5);
-
-    ctx.fillStyle = '#5b5e51';
-    ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
-    this.drawLaneTexture(this.environmentSprites.railTile, {
-      y: ballastY,
-      laneY: laneIndex,
-      height: ballastHeight,
-      fallbackColor: '#676b5a'
-    });
-
-    ctx.fillStyle = 'rgba(30, 33, 29, 0.5)';
-    ctx.fillRect(0, ballastY, this.worldWidth, 2);
-    ctx.fillRect(0, ballastY + ballastHeight - 2, this.worldWidth, 2);
-
-    const gauge = this.tile * railStyle.trackGaugeRatio;
-    const centerY = laneY + laneHeight * 0.5;
-    const railOffset = gauge / 2;
-    ctx.strokeStyle = '#d3d3cf';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(0, centerY - railOffset);
-    ctx.lineTo(this.worldWidth, centerY - railOffset);
-    ctx.moveTo(0, centerY + railOffset);
-    ctx.lineTo(this.worldWidth, centerY + railOffset);
-    ctx.stroke();
-
-    const tieW = Math.max(10, Math.round(this.tile * railStyle.tieWidthRatio));
-    const tieH = Math.max(4, Math.round(gauge + this.tile * 0.12));
-    const tieGap = Math.max(16, Math.round(this.tile * railStyle.tieGapRatio));
-    const tieOffset = ((((laneIndex * this.tile) % tieGap) + tieGap) % tieGap);
-    ctx.fillStyle = 'rgba(49, 38, 27, 0.86)';
-    for (let tieX = -tieGap - tieOffset; tieX < this.worldWidth + tieGap; tieX += tieGap) {
-      ctx.fillRect(tieX, Math.round(centerY - tieH / 2), tieW, tieH);
-    }
-
-    const warning = this.trainWarnings.get(laneIndex);
-    if (warning?.active) {
-      const alpha = warning.phase > 0 ? 0.42 : 0.16;
-      ctx.fillStyle = `rgba(198, 39, 39, ${alpha})`;
-      ctx.fillRect(0, ballastY, this.worldWidth, ballastHeight);
-      ctx.fillStyle = `rgba(255, 242, 210, ${Math.max(0.2, alpha)})`;
-      ctx.fillRect(10, Math.round(centerY - 5), 14, 10);
-      ctx.fillRect(this.worldWidth - 24, Math.round(centerY - 5), 14, 10);
-    }
-
-    this.drawConnectedLaneShading(lane, laneY, laneHeight, {
+  drawRailLane({ lane, top, height }) {
+    const texture = this.getTexture('railTile', GAME_CONFIG.environmentTiles.rail.tileWorldSize);
+    // The photo already has the ties and rails; one copy is sized to exactly one lane tall.
+    if (texture) this.fillTexture(texture, 0, top, this.worldWidth, height, 0, top);
+    this.drawTrainWarning(lane, top, height);
+    this.drawConnectedLaneShading(lane, top, height, {
       capTop: 'rgba(24, 24, 24, 0.42)',
       capBottom: 'rgba(24, 24, 24, 0.42)'
     });
   }
 
-  // Lane gradients are built once per canvas size and shifted into place instead of rebuilt every frame.
-  fillLaneGradient(key, stops, laneY, laneHeight) {
-    let gradient = this.laneGradients.get(key);
-    if (!gradient) {
-      gradient = this.ctx.createLinearGradient(0, 0, 0, laneHeight);
-      for (const [offset, color] of stops) gradient.addColorStop(offset, color);
-      this.laneGradients.set(key, gradient);
+  // Before a MAX arrives: the track pulses red faster and faster, chevrons race across in the
+  // direction the train is coming, and crossing lights at both ends flash alternately.
+  drawTrainWarning(lane, top, height) {
+    const warning = this.trainWarnings.get(lane.y);
+    if (!warning?.active) return;
+    const ctx = this.ctx;
+    const { urgency, direction } = warning;
+    const centerY = top + height / 2;
+
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * Math.PI * 2 * (2.2 + urgency * 4.5));
+    ctx.fillStyle = `rgba(214, 38, 38, ${0.1 + (0.14 + 0.16 * urgency) * pulse})`;
+    ctx.fillRect(0, top, this.worldWidth, height);
+
+    const chevronHeight = height * 0.34;
+    const spacing = this.tile * 0.9;
+    const travel = (this.time * this.tile * (3 + urgency * 5)) % spacing;
+    const tipLength = direction * chevronHeight * 0.6;
+    ctx.save();
+    ctx.strokeStyle = `rgba(255, 214, 120, ${0.35 + 0.45 * urgency})`;
+    ctx.lineWidth = Math.max(2, this.tile * 0.07);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let x = -spacing + travel; x < this.worldWidth + spacing; x += spacing) {
+      const tipX = direction > 0 ? x : this.worldWidth - x;
+      ctx.moveTo(tipX - tipLength, centerY - chevronHeight / 2);
+      ctx.lineTo(tipX, centerY);
+      ctx.lineTo(tipX - tipLength, centerY + chevronHeight / 2);
     }
-    this.ctx.save();
-    this.ctx.translate(0, laneY);
-    this.ctx.fillStyle = gradient;
-    this.ctx.fillRect(0, 0, this.worldWidth, laneHeight);
-    this.ctx.restore();
+    ctx.stroke();
+    ctx.restore();
+
+    const leftLit = Math.sin(this.time * Math.PI * 2 * 1.6) > 0;
+    this.drawCrossingLight(this.tile * 0.36, centerY, leftLit);
+    this.drawCrossingLight(this.worldWidth - this.tile * 0.36, centerY, !leftLit);
+  }
+
+  drawCrossingLight(x, y, lit) {
+    const ctx = this.ctx;
+    const radius = this.tile * 0.15;
+    if (lit) {
+      const glow = ctx.createRadialGradient(x, y, radius * 0.3, x, y, radius * 3.2);
+      glow.addColorStop(0, 'rgba(255, 70, 50, 0.75)');
+      glow.addColorStop(1, 'rgba(255, 70, 50, 0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(x - radius * 3.2, y - radius * 3.2, radius * 6.4, radius * 6.4);
+    }
+    ctx.fillStyle = '#16181a';
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 1.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = lit ? '#ff5a40' : '#5a1a14';
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    if (!lit) return;
+    ctx.fillStyle = 'rgba(255, 235, 220, 0.9)';
+    ctx.beginPath();
+    ctx.arc(x - radius * 0.3, y - radius * 0.3, radius * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // --- St. Johns Bridge -------------------------------------------------------------------
+  // The bridge minigame is dressed as Portland's St. Johns Bridge: a green steel suspension
+  // bridge with Gothic towers. Gameplay is unchanged: the deck is still the three middle columns.
+
+  getBridgeDeckBounds() {
+    const columns = this.getBridgePlayableColumns();
+    return {
+      left: columns[0] * this.tile,
+      right: (columns[columns.length - 1] + 1) * this.tile,
+      girder: this.tile * GAME_CONFIG.stJohnsBridge.girderWidth
+    };
+  }
+
+  getBridgeTowerRows(encounter) {
+    return GAME_CONFIG.stJohnsBridge.towerAt.map((share) => encounter.startY + Math.round(share * (encounter.length - 1)));
+  }
+
+  // 0 at the deck, 1 at the top of a tower: the main cables sag between the towers and run
+  // down to the anchorages at each end.
+  getBridgeCableHeight(encounter, worldY) {
+    const [towerA, towerB] = GAME_CONFIG.stJohnsBridge.towerAt;
+    const t = clamp((worldY - encounter.startY) / Math.max(1, encounter.length), 0, 1);
+    if (t < towerA) return t / towerA;
+    if (t > towerB) return (1 - t) / (1 - towerB);
+    const half = (towerB - towerA) / 2;
+    const fromMiddle = (t - (towerA + half)) / half;
+    return 0.12 + 0.88 * fromMiddle * fromMiddle;
+  }
+
+  drawBridgeLane({ lane, top, height, y }) {
+    this.drawWaterLane({ lane, top, height });
+    const ctx = this.ctx;
+    const encounter = lane.bridgeEncounter;
+    if (!encounter) return;
+    const { colors } = GAME_CONFIG.stJohnsBridge;
+    const { left, right, girder } = this.getBridgeDeckBounds();
+    const bottom = top + height;
+
+    // The deck's shadow on the river, and the cables' shadows swinging out as the cables rise.
+    ctx.fillStyle = 'rgba(6, 18, 24, 0.35)';
+    ctx.fillRect(left - girder + this.tile * 0.18, top, right - left + girder * 2, height);
+    const shadowOffset = (worldY) => this.tile * (0.1 + 0.9 * this.getBridgeCableHeight(encounter, worldY));
+    const nearOffset = shadowOffset(y);
+    const farOffset = shadowOffset(y + 1);
+    ctx.strokeStyle = 'rgba(6, 18, 24, 0.42)';
+    ctx.lineWidth = Math.max(1.5, this.tile * 0.06);
+    ctx.beginPath();
+    ctx.moveTo(left - girder / 2 - nearOffset, bottom);
+    ctx.lineTo(left - girder / 2 - farOffset, top);
+    ctx.moveTo(right + girder / 2 + nearOffset, bottom);
+    ctx.lineTo(right + girder / 2 + farOffset, top);
+    ctx.stroke();
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(left - girder, top + height / 2);
+    ctx.lineTo(left - girder / 2 - (nearOffset + farOffset) / 2, top + height / 2);
+    ctx.moveTo(right + girder, top + height / 2);
+    ctx.lineTo(right + girder / 2 + (nearOffset + farOffset) / 2, top + height / 2);
+    ctx.stroke();
+
+    // Road deck.
+    const asphalt = this.getTexture('roadTile', GAME_CONFIG.environmentTiles.road.tileWorldSize);
+    if (asphalt) this.fillTexture(asphalt, left, top, right - left, height);
+    else {
+      ctx.fillStyle = '#3b4045';
+      ctx.fillRect(left, top, right - left, height);
+    }
+    ctx.fillStyle = 'rgba(90, 98, 104, 0.22)';
+    ctx.fillRect(left, top, right - left, height);
+    ctx.fillStyle = 'rgba(238, 238, 230, 0.62)';
+    const lineWidth = Math.max(1.5, this.tile * 0.045);
+    ctx.fillRect(left + 2, top, lineWidth, height);
+    ctx.fillRect(right - 2 - lineWidth, top, lineWidth, height);
+    for (let column = 1; column < (right - left) / this.tile; column += 1) {
+      ctx.fillRect(left + column * this.tile - lineWidth / 2, top + height * 0.25, lineWidth, height * 0.5);
+    }
+
+    // Green steel girders with a truss X per row, the main cable running along the top of each.
+    for (const girderX of [left - girder, right]) {
+      ctx.fillStyle = colors.main;
+      ctx.fillRect(girderX, top, girder, height);
+      ctx.strokeStyle = colors.dark;
+      ctx.lineWidth = Math.max(1, this.tile * 0.035);
+      ctx.beginPath();
+      ctx.moveTo(girderX, top);
+      ctx.lineTo(girderX + girder, bottom);
+      ctx.moveTo(girderX + girder, top);
+      ctx.lineTo(girderX, bottom);
+      ctx.stroke();
+      ctx.fillStyle = colors.dark;
+      ctx.fillRect(girderX, top, girder, Math.max(1, this.tile * 0.04));
+      ctx.fillStyle = colors.light;
+      ctx.fillRect(girderX + girder * 0.4, top, Math.max(1.5, girder * 0.2), height);
+    }
+
+    // Warm lamps every few rows.
+    if (y % 3 === 0) {
+      for (const lampX of [left - girder / 2, right + girder / 2]) {
+        const glow = ctx.createRadialGradient(lampX, top + height / 2, 1, lampX, top + height / 2, this.tile * 0.4);
+        glow.addColorStop(0, 'rgba(255, 214, 140, 0.55)');
+        glow.addColorStop(1, 'rgba(255, 214, 140, 0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(lampX - this.tile * 0.4, top, this.tile * 0.8, height);
+        ctx.fillStyle = '#ffe2a6';
+        ctx.beginPath();
+        ctx.arc(lampX, top + height / 2, Math.max(1.5, this.tile * 0.05), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Concrete abutments where the bridge meets the land at each end.
+    const abutment = Math.max(3, Math.round(this.tile * 0.16));
+    ctx.fillStyle = '#a9a79d';
+    if (y === encounter.startY) ctx.fillRect(left - girder, bottom - abutment, right - left + girder * 2, abutment);
+    if (y === encounter.endY) ctx.fillRect(left - girder, top, right - left + girder * 2, abutment);
+  }
+
+  // Towers and the entrance sign are drawn after the traffic so cars pass under the arches.
+  drawBridgeOverlays() {
+    // Towers rise several rows above their base, so look a few rows below the screen too.
+    const from = Math.floor(this.cameraY) - Math.ceil(GAME_CONFIG.stJohnsBridge.towerHeight) - 2;
+    const to = Math.ceil(this.cameraY + this.worldHeight / this.tile) + 1;
+    for (let y = from; y <= to; y += 1) {
+      const encounter = this.laneCache.get(y)?.bridgeEncounter;
+      if (!encounter) continue;
+      const rowBottom = this.getLaneScreenY(y - 1);
+      if (this.getBridgeTowerRows(encounter).includes(y)) this.drawStJohnsTower(rowBottom);
+      if (y === encounter.startY + 1) this.drawStJohnsSign(rowBottom);
+    }
+  }
+
+  drawStJohnsTower(baseY) {
+    const ctx = this.ctx;
+    const tile = this.tile;
+    const { colors, towerHeight } = GAME_CONFIG.stJohnsBridge;
+    const { left, right, girder } = this.getBridgeDeckBounds();
+    const legWidth = tile * 0.5;
+    const topY = baseY - tile * towerHeight;
+    const legs = [left - girder - tile * 0.08 - legWidth, right + girder + tile * 0.08];
+
+    for (const legX of legs) {
+      // Tapered leg.
+      ctx.fillStyle = colors.main;
+      ctx.beginPath();
+      ctx.moveTo(legX - tile * 0.05, baseY);
+      ctx.lineTo(legX + legWidth + tile * 0.05, baseY);
+      ctx.lineTo(legX + legWidth - tile * 0.04, topY + tile * 0.3);
+      ctx.lineTo(legX + tile * 0.04, topY + tile * 0.3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = colors.light;
+      ctx.fillRect(legX + tile * 0.05, topY + tile * 0.3, legWidth * 0.2, baseY - topY - tile * 0.3);
+      // Tall pointed Gothic openings.
+      this.drawGothicSlot(legX + legWidth * 0.55, topY + tile * 0.75, legWidth * 0.3, tile * 0.75, colors.dark);
+      this.drawGothicSlot(legX + legWidth * 0.55, topY + tile * 1.8, legWidth * 0.3, tile * 0.6, colors.dark);
+      // Spire cap.
+      ctx.fillStyle = colors.dark;
+      ctx.beginPath();
+      ctx.moveTo(legX - tile * 0.02, topY + tile * 0.32);
+      ctx.lineTo(legX + legWidth / 2, topY - tile * 0.28);
+      ctx.lineTo(legX + legWidth + tile * 0.02, topY + tile * 0.32);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Portal: a cross strut joined to a pointed Gothic arch spanning the roadway.
+    const innerLeft = legs[0] + legWidth - tile * 0.04;
+    const innerRight = legs[1] + tile * 0.04;
+    const middle = (innerLeft + innerRight) / 2;
+    const strutTop = topY + tile * 0.4;
+    const strutHeight = tile * 0.24;
+    const apexY = strutTop + strutHeight;
+    const springY = topY + tile * 2.6;
+    ctx.fillStyle = colors.main;
+    ctx.fillRect(innerLeft, strutTop, innerRight - innerLeft, strutHeight);
+    ctx.fillStyle = colors.dark;
+    ctx.fillRect(innerLeft, strutTop + strutHeight - 2, innerRight - innerLeft, 2);
+
+    const archPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(innerLeft, springY);
+      ctx.bezierCurveTo(innerLeft, springY - (springY - apexY) * 0.75, middle - (innerRight - innerLeft) * 0.18, apexY + tile * 0.08, middle, apexY);
+      ctx.bezierCurveTo(middle + (innerRight - innerLeft) * 0.18, apexY + tile * 0.08, innerRight, springY - (springY - apexY) * 0.75, innerRight, springY);
+    };
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = colors.main;
+    ctx.lineWidth = tile * 0.14;
+    archPath();
+    ctx.stroke();
+    ctx.strokeStyle = colors.dark;
+    ctx.lineWidth = Math.max(1, tile * 0.03);
+    archPath();
+    ctx.stroke();
+    // Lattice between the strut and the arch.
+    ctx.lineWidth = Math.max(1, tile * 0.025);
+    ctx.beginPath();
+    for (let i = 1; i < 8; i += 1) {
+      const x = innerLeft + ((innerRight - innerLeft) * i) / 8;
+      ctx.moveTo(x, strutTop + strutHeight);
+      ctx.lineTo(x, apexY + (springY - apexY) * Math.abs(x - middle) / ((innerRight - innerLeft) / 2) * 0.7);
+    }
+    ctx.stroke();
+  }
+
+  drawGothicSlot(centerX, topY, width, height, color) {
+    const ctx = this.ctx;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(centerX - width / 2, topY + height);
+    ctx.lineTo(centerX - width / 2, topY + width * 0.6);
+    ctx.quadraticCurveTo(centerX - width / 2, topY, centerX, topY - width * 0.2);
+    ctx.quadraticCurveTo(centerX + width / 2, topY, centerX + width / 2, topY + width * 0.6);
+    ctx.lineTo(centerX + width / 2, topY + height);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  drawStJohnsSign(baseY) {
+    const ctx = this.ctx;
+    const tile = this.tile;
+    const { left, girder } = this.getBridgeDeckBounds();
+    const width = tile * 1.9;
+    const height = tile * 0.62;
+    const x = left - girder - tile * 0.25 - width;
+    const y = baseY - tile * 0.95 - height;
+    ctx.fillStyle = '#5b5f60';
+    ctx.fillRect(x + width * 0.2, y + height, Math.max(2, tile * 0.05), tile * 0.75);
+    ctx.fillRect(x + width * 0.8, y + height, Math.max(2, tile * 0.05), tile * 0.75);
+    ctx.fillStyle = '#1f6b46';
+    ctx.fillRect(x, y, width, height);
+    ctx.strokeStyle = '#f2f2ea';
+    ctx.lineWidth = Math.max(1, tile * 0.03);
+    ctx.strokeRect(x + 2, y + 2, width - 4, height - 4);
+    ctx.fillStyle = '#f2f2ea';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${Math.max(7, Math.round(tile * 0.2))}px Rajdhani, Manrope, system-ui, sans-serif`;
+    ctx.fillText('ST. JOHNS', x + width / 2, y + height * 0.34);
+    ctx.fillText('BRIDGE', x + width / 2, y + height * 0.7);
   }
 
   isRowOnScreen(y) {
@@ -1809,54 +2063,26 @@ export class Game {
   drawLanes() {
     const ctx = this.ctx;
     const from = Math.floor(this.cameraY) - 2;
-    const to = from + GAME_CONFIG.visibleRows + 5;
+    const to = Math.ceil(this.cameraY + this.worldHeight / this.tile) + 2;
     const propsToRender = [];
 
     for (let y = from; y <= to; y += 1) {
       this.ensureLane(y);
       const lane = this.laneCache.get(y);
+      if (!lane) continue;
       const laneDef = this.getLaneDefinition(lane.type);
-      const laneY = this.getLaneScreenY(y);
-      const laneHeight = this.getLaneScreenHeight();
+      const { top, height } = this.getLaneScreenRect(y);
+      const args = { lane, top, height, y };
       ctx.fillStyle = GAME_CONFIG.lanePalette[lane.terrainType];
-      ctx.fillRect(0, laneY, this.worldWidth, laneHeight + 1);
+      ctx.fillRect(0, top, this.worldWidth, height);
 
-      if (lane.terrainType === 'road') {
-        const roadTile = this.environmentSprites.roadTile;
-        const sidewalkTile = this.environmentSprites.sidewalkTile;
+      if (lane.type === 'bridgeEncounter') this.drawBridgeLane(args);
+      else if (lane.terrainType === 'road') this.drawRoadLane(args);
+      else if (lane.terrainType === 'water') this.drawWaterLane(args);
+      else if (lane.terrainType === 'rail') this.drawRailLane(args);
+      else this.drawGrassLane(args);
 
-        this.drawLaneTexture(roadTile, { y: laneY, laneY: y, height: laneHeight, fallbackColor: laneDef.fallbackColor });
-
-        const shoulderHeight = Math.max(1, Math.round(laneHeight * GAME_CONFIG.environmentTiles.roadShoulderHeightRatio));
-        if (sidewalkTile?.complete) {
-          this.drawLaneTexture(sidewalkTile, { y: laneY, laneY: y, height: shoulderHeight, fallbackColor: '#5f7f69' });
-          this.drawLaneTexture(sidewalkTile, {
-            y: laneY + laneHeight - shoulderHeight,
-            height: shoulderHeight,
-            laneY: y,
-            fallbackColor: '#5f7f69'
-          });
-        } else {
-          ctx.fillStyle = '#5f7f69';
-          ctx.fillRect(0, laneY + Math.round(laneHeight * 0.1), this.worldWidth, shoulderHeight);
-          ctx.fillRect(0, laneY + laneHeight - shoulderHeight - Math.round(laneHeight * 0.1), this.worldWidth, shoulderHeight);
-        }
-
-        ctx.strokeStyle = 'rgba(245, 245, 245, 0.55)';
-        ctx.setLineDash([14, 18]);
-        ctx.lineDashOffset = -(this.time * 58 * lane.direction);
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0, laneY + Math.round(laneHeight * 0.56));
-        ctx.lineTo(this.worldWidth, laneY + Math.round(laneHeight * 0.56));
-        ctx.stroke();
-        ctx.setLineDash([]);
-      } else if (lane.type === 'bridgeEncounter') this.drawBridgeEncounterLane({ lane, laneY, laneHeight, laneIndex: y });
-      else if (lane.terrainType === 'water') this.drawWaterLane({ lane, laneY, laneHeight, laneIndex: y });
-      else if (lane.terrainType === 'rail') this.drawRailLane({ lane, laneY, laneHeight, laneIndex: y });
-      else this.drawGrassLane({ lane, laneY, laneHeight, laneIndex: y });
-
-      this.collectLanePropsForRender(lane, laneY, laneDef, propsToRender);
+      this.collectLanePropsForRender(lane, top, laneDef, propsToRender);
     }
 
     this.drawCollectedProps(propsToRender);

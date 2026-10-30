@@ -39,7 +39,8 @@ a game where you play as my cat, Fig
 - Traffic and river spacing patterns (platoons, rhythms, convoys) with guaranteed passable gaps
 - Coin collectibles with HUD tracking and charge-to-use super jump economy
 - Super jump (20 lanes) on `J`, `Space`, or touch `SUPER` button
-- MAX train, road traffic, near-miss scoring, particles, rain
+- MAX train with crossing-light warnings, road traffic, near-miss scoring, particles, rain
+- Rare St. Johns Bridge encounter: Gothic towers, green steel girders, oncoming traffic
 - Keyboard controls, plus tap-to-hop, swipe-to-move, and on-screen Pause / Super buttons on phones
 - Arcade-style top-10 leaderboard with optional initials entry or instant new-game flow
 - Fully static-site compatible (works from `index.html` or GitHub Pages)
@@ -65,9 +66,9 @@ Replace files in these folders with your own art/audio while keeping names or up
 
 - `/assets/player` → `figForward` (png), `figLeft` (png), `figRight` (png), `figBack` (png), `figSJ` (png)
 - `/assets/vehicles` → `car1` (png) is reused by standard road variants (`car2`, `car3`, `bike1`, `scooter1`), plus `maxTrain` (png)
-- `/assets/hazards` → `log1` (jpg), `raft1` (jpg), `kayak1` (jpg)
+- `/assets/hazards` → `log1` (png), `raft1` (png), `kayak1` (png)
 - `/assets/collectibles` → `coin` (png)
-- `/assets/environment` → `grassTile` (jpg), `riverTile` (png), `roadTile` (jpg), `railTile` (jpg), `sidewalkTile` (jpg), `tree1` (png), `foodCart` (png), `benson1` (png)
+- `/assets/environment` → `grassTile` (jpg), `riverTile` (jpg), `roadTile` (jpg), `railTile` (jpg), `sidewalkTile` (jpg), `tree1` (png), `foodCart` (png), `benson1` (png)
 - `/assets/ui` → UI-only indicators (example: `superJumpReady`)
 - `/assets/audio` → optional audio files
 
@@ -75,6 +76,8 @@ Keep paths relative (no absolute URLs) so GitHub Pages deployment remains compat
 
 Hitboxes come from each image's transparency, so new art gets matching hitboxes automatically:
 use PNGs with a transparent background. Car sprites should face left (they are mirrored when driving right).
+Ground textures (grass, road, river, sidewalk, rail) repeat across the board, so they should tile
+seamlessly; their on-screen size is set in `environmentTiles` in `js/config.js`.
 Keep images small: about 2x the size they appear in game (e.g. 384px for Fig, 512px for cars) loads fast on phones.
 
 Hitboxes only match the art when the game runs from a web server (GitHub Pages or `python -m http.server`).

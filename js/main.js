@@ -177,6 +177,15 @@ const beginRun = () => {
 startBtn.addEventListener('click', beginRun);
 restartBtn.addEventListener('click', beginRun);
 
+const startLabel = startBtn.textContent;
+startBtn.disabled = true;
+startBtn.textContent = 'Loading…';
+game.assetsReady.then(() => {
+  startBtn.disabled = false;
+  startBtn.textContent = startLabel;
+  if (!ui.startScreen.classList.contains('hidden')) startBtn.focus();
+});
+
 resumeBtn.addEventListener('click', () => {
   if (game.state !== GAME_STATES.PAUSED || ui.pauseScreen.classList.contains('hidden')) return;
   game.togglePause();

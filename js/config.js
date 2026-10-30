@@ -154,7 +154,7 @@ export const ASSET_METADATA = [
   },
   {
     key: 'log1',
-    path: 'assets/hazards/log1.jpg',
+    path: 'assets/hazards/log1.png',
     category: 'river platforms',
     label: 'Log',
     description: 'Floating river platform that can carry the player.',
@@ -164,7 +164,7 @@ export const ASSET_METADATA = [
   },
   {
     key: 'raft1',
-    path: 'assets/hazards/raft1.jpg',
+    path: 'assets/hazards/raft1.png',
     category: 'river platforms',
     label: 'Raft',
     description: 'use this to get across the river',
@@ -174,7 +174,7 @@ export const ASSET_METADATA = [
   },
   {
     key: 'kayak1',
-    path: 'assets/hazards/kayak1.jpg',
+    path: 'assets/hazards/kayak1.png',
     category: 'river platforms',
     label: 'Kayak',
     description: 'Narrow floating platform that still supports river traversal.',
@@ -204,7 +204,7 @@ export const ASSET_METADATA = [
   },
   {
     key: 'riverTile',
-    path: 'assets/environment/riverTile.png',
+    path: 'assets/environment/riverTile.jpg',
     category: 'environment tiles',
     label: 'Willamette',
     description: 'Water lane tile texture used in all river rows.',
@@ -500,6 +500,8 @@ export const GAME_CONFIG = {
   cols: 9,
   tileSize: 96,
   visibleRows: 14,
+  // The Start button waits for images up to this long; after that the game starts with what it has.
+  assetLoadTimeoutMs: 10000,
   baseMoveCooldown: 92,
   movement: {
     hopDuration: 0.1,
@@ -583,31 +585,21 @@ export const GAME_CONFIG = {
     water: '#3f5d73',
     rail: '#646c55'
   },
+  // tileWorldSize: how many tiles wide one copy of a ground texture spans on screen.
   environmentTiles: {
-    baseWorldUnits: { width: 1, height: 1 },
-    roadShoulderHeightRatio: 0.14,
-    snapToPixels: true,
-    overlapPx: 1,
-    grass: {
-      baseScale: 1.8,
-      detailScale: 1.25,
-      detailOffsetX: 0.37,
-      detailOffsetY: 0.61,
-      tonalAlpha: 0.05,
-      undulationFreq: 0.0028,
-      undulationAlpha: 0.025
-    },
-    water: {
-      tileHeightRatio: 0.9,
-      flowSpeed: 0.08,
-      foamAlpha: 0.22
-    },
-    rail: {
-      ballastHeightRatio: 0.82,
-      tieGapRatio: 0.64,
-      tieWidthRatio: 0.2,
-      trackGaugeRatio: 0.36
-    }
+    grass: { tileWorldSize: 2.4, tint: 'rgba(16, 34, 14, 0.2)' },
+    road: { tileWorldSize: 2, sidewalkWorldSize: 1.6, sidewalkHeightRatio: 0.14 },
+    // flowFactor: how fast the water texture drifts compared with the boats on that lane.
+    water: { tileWorldSize: 4.5, flowFactor: 0.35, tint: 'rgba(18, 52, 70, 0.38)' },
+    // The rail photo is 2:1, so 2 tiles wide makes one copy exactly one lane tall.
+    rail: { tileWorldSize: 2 }
+  },
+  stJohnsBridge: {
+    girderWidth: 0.3,
+    // Where the two Gothic towers stand, as a share of the bridge's length.
+    towerAt: [0.22, 0.78],
+    towerHeight: 4.4,
+    colors: { main: '#3f7f69', light: '#6fae95', dark: '#244a3e' }
   },
   coinVisuals: {
     bobAmplitudeRatio: 0.05,
@@ -672,7 +664,7 @@ export const GAME_CONFIG = {
     trafficSpawnInterval: 1.05,
     trafficActiveUntilExit: true,
     trafficStopAfterEncounterRows: 0,
-    warningText: '- cars in front of you!',
+    warningText: 'St. Johns Bridge - oncoming traffic!',
     warningDurationSeconds: 2.4,
     warningFlash: {
       color: '220, 58, 58',
@@ -686,8 +678,7 @@ export const GAME_CONFIG = {
     minimumPickles: 5
   },
   trainWarning: {
-    leadTime: 1.8,
-    flashHz: 4.5
+    leadTime: 1.8
   },
   railHazard: {
     minSpeed: 9.5625,
@@ -773,9 +764,9 @@ export const GAME_CONFIG = {
     earlyLandmarkDistance: { min: 7, max: 11 },
     largeLandmarkDistance: { min: 18, max: 26 },
     rules: {
-      portlandOregonSign: { oncePerRun: true, placement: 'earlyLandmark', lanes: ['grass', 'road'] },
+      portlandOregonSign: { oncePerRun: true, placement: 'earlyLandmark', lanes: ['grass'] },
       streetSigns: { family: ['sign1', 'sign2', 'sign3', 'sign4', 'sign5'], placement: 'rotatingFamily', lanes: ['grass', 'road'] },
-      bookstore1: { oncePerRun: true, placement: 'largeLandmark', lanes: ['grass', 'road'] },
+      bookstore1: { oncePerRun: true, placement: 'largeLandmark', lanes: ['grass'] },
       mutualExclusions: {
         foodCart: ['streetSigns']
       }
@@ -800,19 +791,17 @@ for (const carKey of ['car1', 'car2', 'car3']) {
 }
 GAME_CONFIG.movingEntities.profiles.maxTrain = scaleRenderProfile(GAME_CONFIG.movingEntities.profiles.maxTrain, MOVING_ENTITY_TUNING.trainRenderScale);
 
-GAME_CONFIG.props.render.portlandOregonSign = scalePropRenderProfile(
-  GAME_CONFIG.props.render.portlandOregonSign,
-  PROP_RENDER_TUNING.portlandOregonSignRenderScale
+// Stand a landmark's visible bottom edge (a share of the image height) on the bottom of its own lane,
+// so it never hangs over the row below.
+const standOnLane = (profile, visibleBottom) => ({ ...profile, offsetY: 1 - profile.height * visibleBottom });
+GAME_CONFIG.props.render.portlandOregonSign = standOnLane(
+  scalePropRenderProfile(GAME_CONFIG.props.render.portlandOregonSign, PROP_RENDER_TUNING.portlandOregonSignRenderScale),
+  0.92
 );
-GAME_CONFIG.props.render.bookstore1 = (() => {
-  const profile = GAME_CONFIG.props.render.bookstore1;
-  const scaled = scalePropRenderProfile(profile, PROP_RENDER_TUNING.powellsOnBurnsideRenderScale);
-  const originalBottomY = profile.offsetY + profile.height;
-  return {
-    ...scaled,
-    offsetY: originalBottomY - scaled.height
-  };
-})();
+GAME_CONFIG.props.render.bookstore1 = standOnLane(
+  scalePropRenderProfile(GAME_CONFIG.props.render.bookstore1, PROP_RENDER_TUNING.powellsOnBurnsideRenderScale),
+  0.7
+);
 
 for (const signKey of GAME_CONFIG.props.rules.streetSigns.family) {
   const profile = GAME_CONFIG.props.render[signKey];

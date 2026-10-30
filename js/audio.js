@@ -62,6 +62,10 @@ export class AudioSystem {
         this.beep({ frequency: 320, duration: 0.16, type: 'sawtooth', gain: 0.03, glide: 360 });
         setTimeout(() => this.beep({ frequency: 880, duration: 0.1, type: 'triangle', gain: 0.02, glide: -100 }), 80);
       },
+      trainBell: () => {
+        this.beep({ frequency: 1320, duration: 0.09, type: 'triangle', gain: 0.022 });
+        setTimeout(() => this.beep({ frequency: 1050, duration: 0.11, type: 'triangle', gain: 0.02 }), 140);
+      },
       ui: () => this.beep({ frequency: 420, duration: 0.06, type: 'sine', gain: 0.02 })
     };
     table[name]?.();
