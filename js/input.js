@@ -9,6 +9,9 @@ const KEY_TO_DIR = {
   KeyD: 'right'
 };
 
+const SWIPE_THRESHOLD_PX = 22;
+const TAP_MAX_MS = 280;
+
 export class InputSequenceDetector {
   constructor(sequence, onMatch) {
     this.sequence = Array.isArray(sequence) ? sequence : [];
@@ -56,9 +59,7 @@ export class InputManager {
     this.onToggleDebug = onToggleDebug;
     this.onToggleTerrainDebug = onToggleTerrainDebug;
     this.shouldCaptureKeyboard = shouldCaptureKeyboard;
-    this.swipeStart = null;
-    this.holdInterval = null;
-    this.holdDir = null;
+    this.gesture = null;
     this.sequenceBindings = sequenceBindings;
   }
 
@@ -97,56 +98,38 @@ export class InputManager {
       }
     });
 
-    this.touchContainer?.querySelectorAll('button[data-dir]').forEach((btn) => {
-      btn.addEventListener('pointerdown', (event) => {
-        event.preventDefault();
-        this.startHold(btn.dataset.dir);
-      });
-      btn.addEventListener('pointerup', () => this.stopHold());
-      btn.addEventListener('pointercancel', () => this.stopHold());
-      btn.addEventListener('pointerleave', () => this.stopHold());
-    });
-
-    this.touchContainer?.querySelectorAll('button[data-action="superjump"]').forEach((btn) => {
+    const touchActions = { superjump: () => this.onSuperJump(), pause: () => this.onPause() };
+    this.touchContainer?.querySelectorAll('button[data-action]').forEach((btn) => {
       btn.addEventListener('click', (event) => {
         event.preventDefault();
-        this.onSuperJump();
+        touchActions[btn.dataset.action]?.();
       });
     });
 
+    // Touch: a swipe moves as soon as the finger has travelled far enough (no waiting for release);
+    // a quick tap hops forward.
     this.canvas.addEventListener('pointerdown', (event) => {
-      this.swipeStart = { x: event.clientX, y: event.clientY };
+      if (!event.isPrimary) return;
+      this.gesture = { x: event.clientX, y: event.clientY, at: performance.now(), used: false };
     });
-
-    this.canvas.addEventListener('pointerup', (event) => {
-      if (!this.swipeStart) return;
-      const dx = event.clientX - this.swipeStart.x;
-      const dy = event.clientY - this.swipeStart.y;
-      this.swipeStart = null;
-      const threshold = 24;
-      if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) return;
+    this.canvas.addEventListener('pointermove', (event) => {
+      const gesture = this.gesture;
+      if (!gesture || gesture.used || !event.isPrimary) return;
+      const dx = event.clientX - gesture.x;
+      const dy = event.clientY - gesture.y;
+      if (Math.hypot(dx, dy) < SWIPE_THRESHOLD_PX) return;
+      gesture.used = true;
       if (Math.abs(dx) > Math.abs(dy)) this.onMove(dx > 0 ? 'right' : 'left');
       else this.onMove(dy > 0 ? 'down' : 'up');
     });
-    this.canvas.addEventListener('pointercancel', () => {
-      this.swipeStart = null;
+    this.canvas.addEventListener('pointerup', (event) => {
+      const gesture = this.gesture;
+      this.gesture = null;
+      if (!gesture || gesture.used || !event.isPrimary) return;
+      if (performance.now() - gesture.at <= TAP_MAX_MS) this.onMove('up');
     });
-  }
-
-  startHold(dir) {
-    this.stopHold();
-    this.holdDir = dir;
-    this.onMove(dir);
-    this.holdInterval = setInterval(() => {
-      this.onMove(this.holdDir);
-    }, 120);
-  }
-
-  stopHold() {
-    this.holdDir = null;
-    if (this.holdInterval) {
-      clearInterval(this.holdInterval);
-      this.holdInterval = null;
-    }
+    this.canvas.addEventListener('pointercancel', () => {
+      this.gesture = null;
+    });
   }
 }

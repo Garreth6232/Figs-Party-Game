@@ -11,6 +11,8 @@ export class UIController {
     this.bestCard = document.getElementById('bestCard');
     this.coinCard = document.getElementById('coinCard');
     this.superJumpCard = document.getElementById('superJumpCard');
+    this.touchSuperBtn = document.getElementById('touchSuperBtn');
+    this.touchSuperCount = document.getElementById('touchSuperCount');
     this.toastEl = document.getElementById('toast');
     this.warningFlashEl = document.getElementById('warningFlash');
 
@@ -391,6 +393,10 @@ export class UIController {
   updateSuperJumps(count) {
     this.superJumpEl.textContent = String(count);
     this.superJumpCard.classList.toggle('charged', count > 0);
+    if (this.touchSuperBtn) {
+      this.touchSuperBtn.disabled = count < 1;
+      this.touchSuperCount.textContent = String(count);
+    }
   }
 
   showToast(message, variant = 'info', durationMs = 1200, options = {}) {

@@ -2,59 +2,59 @@ import { GAME_CONFIG } from './config.js';
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
-function createMask(resolution, painter) {
-  const mask = Array.from({ length: resolution }, () => Array(resolution).fill(false));
-  for (let y = 0; y < resolution; y += 1) {
-    for (let x = 0; x < resolution; x += 1) {
-      const nx = (x + 0.5) / resolution;
-      const ny = (y + 0.5) / resolution;
-      mask[y][x] = painter(nx, ny);
+// Masks are built from the real sprite pixels, so a hitbox is exactly what the player sees.
+// A shape is { x, y, width, height, mask, flipX, scale } in screen pixels, where x/y/width/height
+// is the rectangle the sprite is drawn into and scale shrinks the solid area around its center.
+function buildMaskFromImage(image, crop = {}) {
+  const { alphaThreshold, maskLongSide } = GAME_CONFIG.collisions;
+  const sx = image.naturalWidth * (crop.left ?? 0);
+  const sy = image.naturalHeight * (crop.top ?? 0);
+  const sw = image.naturalWidth * (1 - (crop.left ?? 0) - (crop.right ?? 0));
+  const sh = image.naturalHeight * (1 - (crop.top ?? 0) - (crop.bottom ?? 0));
+  if (sw <= 0 || sh <= 0) return null;
+
+  const aspect = sw / sh;
+  const cols = Math.max(4, Math.round(aspect >= 1 ? maskLongSide : maskLongSide * aspect));
+  const rows = Math.max(4, Math.round(aspect >= 1 ? maskLongSide / aspect : maskLongSide));
+  const canvas = document.createElement('canvas');
+  canvas.width = cols;
+  canvas.height = rows;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(image, sx, sy, sw, sh, 0, 0, cols, rows);
+  const pixels = ctx.getImageData(0, 0, cols, rows).data;
+
+  const data = new Uint8Array(cols * rows);
+  let minCol = cols;
+  let maxCol = -1;
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      if (pixels[(row * cols + col) * 4 + 3] < alphaThreshold) continue;
+      data[row * cols + col] = 1;
+      minCol = Math.min(minCol, col);
+      maxCol = Math.max(maxCol, col);
     }
   }
-  return mask;
+  if (maxCol < 0) return null;
+
+  return { cols, rows, data, minU: minCol / cols, maxU: (maxCol + 1) / cols };
 }
 
-const orientationMasks = {
-  forward: createMask(GAME_CONFIG.collisions.maskResolution, (x, y) => {
-    const body = ((x - 0.5) ** 2) / 0.09 + ((y - 0.58) ** 2) / 0.14 <= 1;
-    const head = ((x - 0.5) ** 2) / 0.03 + ((y - 0.2) ** 2) / 0.04 <= 1;
-    return body || head;
-  }),
-  back: createMask(GAME_CONFIG.collisions.maskResolution, (x, y) => {
-    const body = ((x - 0.5) ** 2) / 0.085 + ((y - 0.58) ** 2) / 0.13 <= 1;
-    const hood = ((x - 0.5) ** 2) / 0.035 + ((y - 0.28) ** 2) / 0.035 <= 1;
-    return body || hood;
-  }),
-  left: createMask(GAME_CONFIG.collisions.maskResolution, (x, y) => {
-    const body = ((x - 0.56) ** 2) / 0.12 + ((y - 0.54) ** 2) / 0.14 <= 1;
-    const head = ((x - 0.24) ** 2) / 0.03 + ((y - 0.35) ** 2) / 0.03 <= 1;
-    return body || head;
-  }),
-  right: createMask(GAME_CONFIG.collisions.maskResolution, (x, y) => {
-    const body = ((x - 0.44) ** 2) / 0.12 + ((y - 0.54) ** 2) / 0.14 <= 1;
-    const head = ((x - 0.76) ** 2) / 0.03 + ((y - 0.35) ** 2) / 0.03 <= 1;
-    return body || head;
-  })
-};
-
-const staticMasks = {
-  car: createMask(GAME_CONFIG.collisions.maskResolution, (x, y) => x > 0.06 && x < 0.94 && y > 0.24 && y < 0.84),
-  bike: createMask(
-    GAME_CONFIG.collisions.maskResolution,
-    (x, y) => (x > 0.08 && x < 0.92 && y > 0.4 && y < 0.72) || ((x - 0.18) ** 2 + (y - 0.75) ** 2 < 0.02)
-  ),
-  scooter: createMask(
-    GAME_CONFIG.collisions.maskResolution,
-    (x, y) => (x > 0.08 && x < 0.92 && y > 0.36 && y < 0.72) || ((x - 0.85) ** 2 + (y - 0.28) ** 2 < 0.01)
-  ),
-  maxTrain: createMask(GAME_CONFIG.collisions.maskResolution, (x, y) => x > 0.02 && x < 0.98 && y > 0.18 && y < 0.9),
-  platform: createMask(GAME_CONFIG.collisions.maskResolution, (x, y) => x > 0.06 && x < 0.94 && y > 0.24 && y < 0.86),
-  collectible: createMask(GAME_CONFIG.collisions.maskResolution, (x, y) => (x - 0.5) ** 2 + (y - 0.5) ** 2 < 0.18)
-};
+// Used until a sprite has loaded (or if the browser blocks reading its pixels).
+const FALLBACK_MASK = (() => {
+  const cols = 10;
+  const rows = 10;
+  const data = new Uint8Array(cols * rows);
+  for (let row = 2; row < 8; row += 1) {
+    for (let col = 1; col < 9; col += 1) data[row * cols + col] = 1;
+  }
+  return { cols, rows, data, minU: 0.1, maxU: 0.9 };
+})();
 
 export class CollisionSystem {
   constructor() {
     this.debugEnabled = GAME_CONFIG.debug.collisionOverlay;
+    this.maskCache = new WeakMap();
+    this.pixelReadBlocked = false;
   }
 
   toggleDebug() {
@@ -62,94 +62,93 @@ export class CollisionSystem {
     return this.debugEnabled;
   }
 
-  getProfile(type) {
-    return GAME_CONFIG.collisions.profiles[type] ?? GAME_CONFIG.collisions.profiles.player;
-  }
-
-  getMask(type, orientation = 'forward') {
-    if (type === 'player') return orientationMasks[orientation] ?? orientationMasks.forward;
-    return staticMasks[type] ?? staticMasks.car;
-  }
-
-  getAABB(entity, type, tile, { swept = false } = {}) {
-    const profile = this.getProfile(type);
-    const width = (entity.w ?? profile.width) * tile;
-    const height = (entity.h ?? profile.height) * tile;
-    const centerX = Number.isFinite(entity.centerX) ? entity.centerX * tile : (entity.x + (entity.anchorX ?? 0.5)) * tile;
-    const centerY = Number.isFinite(entity.centerY) ? entity.centerY : entity.screenY + tile * (entity.anchorY ?? 0.5);
-    const padX = (profile.broadPadding?.x ?? 0) * tile;
-    const padY = (profile.broadPadding?.y ?? 0) * tile;
-
-    let left = centerX - width * 0.5 - padX;
-    let right = centerX + width * 0.5 + padX;
-
-    if (swept && (Number.isFinite(entity.prevCenterX) || Number.isFinite(entity.prevX))) {
-      const prevCenterX = (Number.isFinite(entity.prevCenterX) ? entity.prevCenterX : entity.prevX + (entity.anchorX ?? 0.5)) * tile;
-      left = Math.min(left, prevCenterX - width * 0.5 - padX);
-      right = Math.max(right, prevCenterX + width * 0.5 + padX);
+  getMask(image, crop) {
+    if (!image?.complete || !image.naturalWidth || this.pixelReadBlocked) return FALLBACK_MASK;
+    const cropKey = `${crop?.left ?? 0},${crop?.right ?? 0},${crop?.top ?? 0},${crop?.bottom ?? 0}`;
+    let byCrop = this.maskCache.get(image);
+    if (!byCrop) {
+      byCrop = new Map();
+      this.maskCache.set(image, byCrop);
     }
-
-    return {
-      left,
-      right,
-      top: centerY - height * 0.5 - padY,
-      bottom: centerY + height * 0.5 + padY,
-      width,
-      height,
-      centerX,
-      centerY
-    };
+    if (!byCrop.has(cropKey)) {
+      try {
+        byCrop.set(cropKey, buildMaskFromImage(image, crop) ?? FALLBACK_MASK);
+      } catch {
+        // Opening index.html straight from disk blocks pixel reads; fall back to box hitboxes.
+        this.pixelReadBlocked = true;
+        return FALLBACK_MASK;
+      }
+    }
+    return byCrop.get(cropKey);
   }
 
-  broadPhase(a, b) {
-    return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  // Horizontal extent of the visible pixels, in screen pixels.
+  getVisibleSpan(shape) {
+    const { minU, maxU } = shape.mask;
+    const left = shape.flipX ? 1 - maxU : minU;
+    const right = shape.flipX ? 1 - minU : maxU;
+    return { left: shape.x + left * shape.width, right: shape.x + right * shape.width };
   }
 
-  narrowPhase(entityA, typeA, orientA, entityB, typeB, orientB, tile) {
-    const aabbA = this.getAABB(entityA, typeA, tile);
-    const aabbB = this.getAABB(entityB, typeB, tile);
-    if (!this.broadPhase(aabbA, aabbB)) return false;
+  getBounds(shape) {
+    const scale = shape.scale ?? 1;
+    const width = shape.width * scale;
+    const height = shape.height * scale;
+    const left = shape.x + (shape.width - width) / 2;
+    const top = shape.y + (shape.height - height) / 2;
+    return { left, top, right: left + width, bottom: top + height };
+  }
 
-    const left = Math.max(aabbA.left, aabbB.left);
-    const top = Math.max(aabbA.top, aabbB.top);
-    const right = Math.min(aabbA.right, aabbB.right);
-    const bottom = Math.min(aabbA.bottom, aabbB.bottom);
-    const maskA = this.getMask(typeA, orientA);
-    const maskB = this.getMask(typeB, orientB);
+  isSolidAt(shape, bounds, px, py) {
+    const { mask } = shape;
+    let u = (px - bounds.left) / (bounds.right - bounds.left);
+    const v = (py - bounds.top) / (bounds.bottom - bounds.top);
+    if (shape.flipX) u = 1 - u;
+    const col = clamp(Math.floor(u * mask.cols), 0, mask.cols - 1);
+    const row = clamp(Math.floor(v * mask.rows), 0, mask.rows - 1);
+    return mask.data[row * mask.cols + col] === 1;
+  }
+
+  overlaps(a, b) {
+    const boundsA = this.getBounds(a);
+    const boundsB = this.getBounds(b);
+    const left = Math.max(boundsA.left, boundsB.left);
+    const right = Math.min(boundsA.right, boundsB.right);
+    const top = Math.max(boundsA.top, boundsB.top);
+    const bottom = Math.min(boundsA.bottom, boundsB.bottom);
+    if (left >= right || top >= bottom) return false;
+
     const stride = GAME_CONFIG.collisions.sampleStridePx;
-
-    for (let y = top; y <= bottom; y += stride) {
-      for (let x = left; x <= right; x += stride) {
-        const ax = clamp(Math.floor(((x - aabbA.left) / (aabbA.right - aabbA.left)) * maskA.length), 0, maskA.length - 1);
-        const ay = clamp(Math.floor(((y - aabbA.top) / (aabbA.bottom - aabbA.top)) * maskA.length), 0, maskA.length - 1);
-        if (!maskA[ay][ax]) continue;
-        const bx = clamp(Math.floor(((x - aabbB.left) / (aabbB.right - aabbB.left)) * maskB.length), 0, maskB.length - 1);
-        const by = clamp(Math.floor(((y - aabbB.top) / (aabbB.bottom - aabbB.top)) * maskB.length), 0, maskB.length - 1);
-        if (maskB[by][bx]) return true;
+    for (let y = top + stride / 2; y < bottom; y += stride) {
+      for (let x = left + stride / 2; x < right; x += stride) {
+        if (this.isSolidAt(a, boundsA, x, y) && this.isSolidAt(b, boundsB, x, y)) return true;
       }
     }
     return false;
   }
 
-  drawDebug(ctx, entries, tile) {
+  drawDebug(ctx, entries) {
     if (!this.debugEnabled) return;
-    for (const entry of entries) {
-      const broad = this.getAABB(entry.entity, entry.type, tile, { swept: entry.swept });
-      ctx.strokeStyle = entry.color ?? 'rgba(255,255,255,0.7)';
+    for (const { shape, color, showMask } of entries) {
+      const bounds = this.getBounds(shape);
+      ctx.strokeStyle = color;
       ctx.lineWidth = 1;
-      ctx.strokeRect(broad.left, broad.top, broad.right - broad.left, broad.bottom - broad.top);
+      ctx.strokeRect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
+      if (!showMask) continue;
 
-      if (!entry.showMask) continue;
-      const mask = this.getMask(entry.type, entry.orientation);
-      ctx.fillStyle = (entry.color ?? 'rgba(255,255,255,0.7)').replace('0.7', '0.18');
-      const cellW = (broad.right - broad.left) / mask.length;
-      const cellH = (broad.bottom - broad.top) / mask.length;
-      for (let y = 0; y < mask.length; y += 1) {
-        for (let x = 0; x < mask.length; x += 1) {
-          if (!mask[y][x]) continue;
-          ctx.fillRect(broad.left + x * cellW, broad.top + y * cellH, cellW, cellH);
+      const { mask } = shape;
+      const cellW = (bounds.right - bounds.left) / mask.cols;
+      const cellH = (bounds.bottom - bounds.top) / mask.rows;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.35;
+      for (let row = 0; row < mask.rows; row += 1) {
+        for (let col = 0; col < mask.cols; col += 1) {
+          if (!mask.data[row * mask.cols + col]) continue;
+          const drawCol = shape.flipX ? mask.cols - 1 - col : col;
+          ctx.fillRect(bounds.left + drawCol * cellW, bounds.top + row * cellH, cellW, cellH);
         }
       }
+      ctx.globalAlpha = 1;
     }
   }
 }

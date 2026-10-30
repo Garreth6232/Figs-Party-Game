@@ -296,15 +296,7 @@ export class TerrainSystem {
       const speedFloor = this.config.roadTraffic?.minSpeed ?? 1.35;
       const speedCeil = this.config.roadTraffic?.maxSpeed ?? 4.2;
       lane.speed = clamp(1.35 + hash01(y * 0.77 + this.worldSeed) * 1.35 + score * 0.012, speedFloor, speedCeil);
-      lane.interval = 1.75 + hash01(y * 0.37 + this.worldSeed * 3.1) * 1.05;
       if (trafficProfile) {
-        const intervalMultiplier = clamp(
-          (trafficProfile.intervalMultiplierMin ?? 1) + hash01(this.worldSeed * 1.87 + y * 0.491) * ((trafficProfile.intervalMultiplierMax ?? 1) - (trafficProfile.intervalMultiplierMin ?? 1)),
-          0.55,
-          1.8
-        );
-        lane.interval *= intervalMultiplier;
-
         const speedMultiplier = clamp(
           (trafficProfile.speedMultiplierMin ?? 1) + hash01(this.worldSeed * 2.39 + y * 0.911) * ((trafficProfile.speedMultiplierMax ?? 1) - (trafficProfile.speedMultiplierMin ?? 1)),
           0.75,
@@ -312,22 +304,15 @@ export class TerrainSystem {
         );
         lane.speed = clamp(lane.speed * speedMultiplier, speedFloor, speedCeil);
 
-        lane.trafficArchetype = trafficProfile.type;
+        lane.trafficArchetype = trafficProfile;
       }
     } else if (gameplayType === 'water') {
       const riverProfile = this.getRiverArchetype(y);
       lane.speed = this.config.riverPlatforms.minSpeed + hash01(y * 0.29 + this.worldSeed * 1.9) * (this.config.riverPlatforms.maxSpeed - this.config.riverPlatforms.minSpeed);
       const platformIndex = Math.floor(hash01(y * 0.61 + this.worldSeed * 1.1) * lane.allowedPlatforms.length);
       lane.platformType = lane.allowedPlatforms[platformIndex] ?? lane.allowedPlatforms[0];
-      lane.interval = this.config.riverPlatforms.minInterval + hash01(y * 0.71 + this.worldSeed * 2.9) * (this.config.riverPlatforms.maxInterval - this.config.riverPlatforms.minInterval);
+      lane.platformPool = [...lane.allowedPlatforms];
       if (riverProfile) {
-        const intervalMultiplier = clamp(
-          (riverProfile.intervalMultiplierMin ?? 1) + hash01(this.worldSeed * 2.83 + y * 0.377) * ((riverProfile.intervalMultiplierMax ?? 1) - (riverProfile.intervalMultiplierMin ?? 1)),
-          0.65,
-          1.55
-        );
-        lane.interval *= intervalMultiplier;
-
         const speedMultiplier = clamp(
           (riverProfile.speedMultiplierMin ?? 1) + hash01(this.worldSeed * 3.31 + y * 0.547) * ((riverProfile.speedMultiplierMax ?? 1) - (riverProfile.speedMultiplierMin ?? 1)),
           0.8,
@@ -343,15 +328,9 @@ export class TerrainSystem {
         if (platformTypes.length) {
           const riverPlatformIndex = Math.floor(hash01(this.worldSeed * 4.07 + y * 0.619) * platformTypes.length);
           lane.platformType = platformTypes[riverPlatformIndex] ?? lane.platformType;
+          lane.platformPool = [...platformTypes];
         }
-
-        lane.seedPlatformCount = Math.max(1, Math.round(
-          (riverProfile.initialPlatformCountMin ?? this.config.riverPlatforms.minLanePlatformCount)
-          + hash01(this.worldSeed * 4.49 + y * 0.883)
-            * ((riverProfile.initialPlatformCountMax ?? this.config.riverPlatforms.minLanePlatformCount)
-            - (riverProfile.initialPlatformCountMin ?? this.config.riverPlatforms.minLanePlatformCount))
-        ));
-        lane.riverArchetype = riverProfile.type;
+        lane.riverArchetype = riverProfile;
       }
     } else if (gameplayType === 'rail') {
       lane.speed = this.config.railHazard.minSpeed + hash01(y * 0.47 + this.worldSeed * 2.7) * (this.config.railHazard.maxSpeed - this.config.railHazard.minSpeed);

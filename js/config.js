@@ -17,9 +17,7 @@ export const STANDARD_ROAD_VEHICLE_KEYS = ['car1', 'car2', 'car3', 'scooter1'];
 
 const MOVING_ENTITY_TUNING = Object.freeze({
   trainRenderScale: 1.5,
-  trainHitboxWidthMultiplier: 1.25,
-  carRenderScale: 1.25,
-  carHitboxScale: 1.1
+  carRenderScale: 1.25
 });
 
 const PROP_RENDER_TUNING = Object.freeze({
@@ -34,15 +32,6 @@ const scaleRenderProfile = (profile, scale) => ({
     ...profile.render,
     width: profile.render.width * scale,
     height: profile.render.height * scale
-  }
-});
-
-const scaleCollisionProfile = (profile, scale) => ({
-  ...profile,
-  collision: {
-    ...profile.collision,
-    width: profile.collision.width * scale,
-    height: profile.collision.height * scale
   }
 });
 
@@ -512,6 +501,12 @@ export const GAME_CONFIG = {
   tileSize: 96,
   visibleRows: 14,
   baseMoveCooldown: 92,
+  movement: {
+    hopDuration: 0.1,
+    hopHeight: 0.18,
+    // A tap that lands during the cooldown is remembered for this long instead of being dropped.
+    inputBufferMs: 180
+  },
   startY: 2,
   safeZones: {
     guaranteedSafeRows: 6,
@@ -530,51 +525,22 @@ export const GAME_CONFIG = {
     password: '1234'
   },
   alignment: {
-    player: { renderOffsetY: 0.0, collisionOffsetY: 0.0 },
-    platform: { renderOffsetY: -0.02, collisionOffsetY: -0.02 },
-    collectible: { renderOffsetY: -0.03, collisionOffsetY: -0.03 }
+    player: { renderOffsetY: 0.0 },
+    collectible: { renderOffsetY: -0.03 }
   },
   movingEntities: {
-    anchors: {
-      movingObjects: 'center'
-    },
+    // Hitboxes come from each sprite's visible pixels inside this render box (see collision.js).
+    // Car sprites face left; they are mirrored when driving right.
     profiles: {
-      car1: {
-        render: { width: 1.2, height: 0.7, offsetX: 0, offsetY: 0 },
-        collision: { type: 'car', width: 1.08, height: 0.56, offsetX: 0, offsetY: 0.01 }
-      },
-      car2: {
-        render: { width: 1.2, height: 0.7, offsetX: 0, offsetY: 0 },
-        collision: { type: 'car', width: 1.12, height: 0.58, offsetX: 0, offsetY: 0.01 }
-      },
-      car3: {
-        render: { width: 1.2, height: 0.7, offsetX: 0, offsetY: 0 },
-        collision: { type: 'car', width: 1.1, height: 0.56, offsetX: 0, offsetY: 0.01 }
-      },
-      bike1: {
-        render: { width: 0.9, height: 0.7, offsetX: 0, offsetY: 0 },
-        collision: { type: 'bike', width: 0.78, height: 0.46, offsetX: 0, offsetY: 0.08 }
-      },
-      scooter1: {
-        render: { width: 1.0, height: 0.7, offsetX: 0, offsetY: 0 },
-        collision: { type: 'scooter', width: 0.86, height: 0.44, offsetX: 0, offsetY: 0.08 }
-      },
-      maxTrain: {
-        render: { width: 2.8, height: 0.8, offsetX: 0, offsetY: 0 },
-        collision: { type: 'maxTrain', width: 2.72, height: 0.62, offsetX: 0, offsetY: 0.05 }
-      },
-      log1: {
-        render: { width: 1.5, height: 0.52, offsetX: 0, offsetY: -0.02 },
-        collision: { type: 'platform', width: 1.4, height: 0.34, offsetX: 0, offsetY: 0 }
-      },
-      raft1: {
-        render: { width: 1.2, height: 0.48, offsetX: 0, offsetY: -0.02 },
-        collision: { type: 'platform', width: 1.1, height: 0.32, offsetX: 0, offsetY: 0 }
-      },
-      kayak1: {
-        render: { width: 0.95, height: 0.42, offsetX: 0, offsetY: -0.02 },
-        collision: { type: 'platform', width: 0.78, height: 0.25, offsetX: 0, offsetY: 0.02 }
-      }
+      car1: { render: { width: 1.2, height: 0.7, offsetX: 0, offsetY: 0 }, facesLeft: true },
+      car2: { render: { width: 1.2, height: 0.7, offsetX: 0, offsetY: 0 }, facesLeft: true },
+      car3: { render: { width: 1.2, height: 0.7, offsetX: 0, offsetY: 0 }, facesLeft: true },
+      bike1: { render: { width: 0.9, height: 0.7, offsetX: 0, offsetY: 0 }, facesLeft: true },
+      scooter1: { render: { width: 1.0, height: 0.7, offsetX: 0, offsetY: 0 }, facesLeft: true },
+      maxTrain: { render: { width: 2.8, height: 0.8, offsetX: 0, offsetY: 0 } },
+      log1: { render: { width: 1.5, height: 0.52, offsetX: 0, offsetY: -0.02 } },
+      raft1: { render: { width: 1.2, height: 0.48, offsetX: 0, offsetY: -0.02 } },
+      kayak1: { render: { width: 0.95, height: 0.42, offsetX: 0, offsetY: -0.02 } }
     }
   },
   renderProfiles: {
@@ -660,7 +626,17 @@ export const GAME_CONFIG = {
   },
   roadTraffic: {
     minSpeed: 1.35,
-    maxSpeed: 4.2
+    maxSpeed: 4.2,
+    // Every gap between two vehicles is at least clearWidth tiles plus however far traffic
+    // moves in minCrossWindow seconds, so there is always time to hop through.
+    clearWidth: 0.95,
+    minCrossWindow: 0.42,
+    // Higher difficulty tightens gaps by up to this share (never below the minimum).
+    difficultyGapSqueeze: 0.45
+  },
+  flowLanes: {
+    // Road and river entities spawn with their centers this far past the screen edge.
+    entryOffset: 1.4
   },
   laneWeights: [
     { type: 'grass', weight: 2.2 },
@@ -668,11 +644,15 @@ export const GAME_CONFIG = {
     { type: 'water', weight: 2.0 },
     { type: 'rail', weight: 1.25 }
   ],
+  // Gaps are in tiles between the visible ends of neighbouring vehicles.
   trafficArchetypes: [
-    { type: 'sparse', weight: 1.05, intervalMultiplierMin: 1.22, intervalMultiplierMax: 1.48, speedMultiplierMin: 0.92, speedMultiplierMax: 1.03 },
-    { type: 'regular', weight: 1.35, intervalMultiplierMin: 0.94, intervalMultiplierMax: 1.13, speedMultiplierMin: 0.96, speedMultiplierMax: 1.08 },
-    { type: 'clustered', weight: 0.9, intervalMultiplierMin: 0.74, intervalMultiplierMax: 0.92, speedMultiplierMin: 0.9, speedMultiplierMax: 1.01 },
-    { type: 'fastLight', weight: 0.55, intervalMultiplierMin: 1.04, intervalMultiplierMax: 1.25, speedMultiplierMin: 1.05, speedMultiplierMax: 1.15 }
+    { type: 'sparse', weight: 1.0, gap: [3.4, 5.8], speedMultiplierMin: 0.92, speedMultiplierMax: 1.03 },
+    { type: 'regular', weight: 1.25, gap: [2.3, 3.4], speedMultiplierMin: 0.96, speedMultiplierMax: 1.08 },
+    // Bunches of 2-3 cars running nose to tail (tight but passable), then a long break.
+    { type: 'platoon', weight: 0.95, gap: [4.6, 7.2], platoonSize: [2, 4], platoonGapScale: [1.0, 1.25], speedMultiplierMin: 0.9, speedMultiplierMax: 1.01 },
+    // Alternates short and long gaps so the lane has a beat to it.
+    { type: 'rhythm', weight: 0.8, gap: [1.9, 2.6], altGap: [4.2, 5.4], speedMultiplierMin: 0.94, speedMultiplierMax: 1.05 },
+    { type: 'fastLight', weight: 0.55, gap: [4.2, 6.8], speedMultiplierMin: 1.05, speedMultiplierMax: 1.15 }
   ],
   bridgeEncounter: {
     firstBridgeMaxDistance: 130,
@@ -727,78 +707,32 @@ export const GAME_CONFIG = {
     }
   },
   riverPlatforms: {
-    hitboxPaddingX: 0.03,
-    kayakLandingPadWidthMultiplier: 1.16,
-    kayakLandingPadHeightMultiplier: 1.24,
-    laneTypes: ['log1', 'raft1', 'kayak1'],
     minSpeed: 0.85,
     maxSpeed: 1.75,
-    minInterval: 1.35,
-    maxInterval: 2.6,
-    minLanePlatformCount: 3,
+    // No gap between platforms takes longer than this to drift past a point, so a ride always comes.
     maxGapSeconds: 1.65,
-    widthByType: {
-      log1: 1.5,
-      raft1: 1.2,
-      kayak1: 0.95
-    },
-    heightByType: {
-      log1: 0.52,
-      raft1: 0.48,
-      kayak1: 0.42
-    }
+    minGap: 0.3,
+    maxGap: 2.6,
+    // Neighbouring river lanes always flow opposite ways so you never wait on a parallel current.
+    alternateDirections: true,
+    difficultyGapStretch: 0.3,
+    // Share of spawns that use the lane's main platform type; the rest pick from the archetype.
+    primaryTypeShare: 0.6
   },
   riverArchetypes: [
-    {
-      type: 'wideLogs',
-      weight: 1.05,
-      platformTypes: ['log1', 'raft1'],
-      intervalMultiplierMin: 1.08,
-      intervalMultiplierMax: 1.28,
-      speedMultiplierMin: 0.88,
-      speedMultiplierMax: 1.02,
-      initialPlatformCountMin: 2,
-      initialPlatformCountMax: 3
-    },
-    {
-      type: 'mixedCurrent',
-      weight: 1.45,
-      platformTypes: ['log1', 'raft1', 'kayak1'],
-      intervalMultiplierMin: 0.9,
-      intervalMultiplierMax: 1.12,
-      speedMultiplierMin: 0.95,
-      speedMultiplierMax: 1.08,
-      initialPlatformCountMin: 3,
-      initialPlatformCountMax: 4
-    },
-    {
-      type: 'tightCrossing',
-      weight: 0.95,
-      platformTypes: ['raft1', 'kayak1'],
-      intervalMultiplierMin: 0.76,
-      intervalMultiplierMax: 0.96,
-      speedMultiplierMin: 0.84,
-      speedMultiplierMax: 0.97,
-      initialPlatformCountMin: 4,
-      initialPlatformCountMax: 5
-    }
+    { type: 'wideLogs', weight: 1.05, platformTypes: ['log1', 'raft1'], gap: [0.9, 2.1], convoyChance: 0.15, speedMultiplierMin: 0.88, speedMultiplierMax: 1.02 },
+    // convoyChance: the next platform trails almost touching, making a longer walkway.
+    { type: 'mixedCurrent', weight: 1.45, platformTypes: ['log1', 'raft1', 'kayak1'], gap: [0.7, 2.4], convoyChance: 0.3, speedMultiplierMin: 0.95, speedMultiplierMax: 1.08 },
+    { type: 'tightCrossing', weight: 0.95, platformTypes: ['raft1', 'kayak1'], gap: [0.45, 1.5], convoyChance: 0.2, speedMultiplierMin: 0.84, speedMultiplierMax: 0.97 }
   ],
   collisions: {
-    maskResolution: 20,
+    alphaThreshold: 96,
+    maskLongSide: 48,
     sampleStridePx: 2,
-    profiles: {
-      player: {
-        width: 0.504,
-        height: 0.54,
-        broadPadding: { x: 0.015, y: 0.02 }
-      },
-      car: { width: 1.1, height: 0.58, broadPadding: { x: 0.02, y: 0.03 } },
-      bike: { width: 0.78, height: 0.46, broadPadding: { x: 0.015, y: 0.03 } },
-      scooter: { width: 0.86, height: 0.44, broadPadding: { x: 0.02, y: 0.03 } },
-      maxTrain: { width: 2.72, height: 0.62, broadPadding: { x: 0.015, y: 0.025 } },
-      platform: { broadPadding: { x: 0.01, y: 0.02 } },
-      collectible: { width: 0.28, height: 0.28, broadPadding: { x: 0.01, y: 0.01 } }
-    }
+    // Fig's hitbox is her visible pixels shrunk to this share, so a one-pixel graze is not a death.
+    playerForgiveness: 0.86,
+    // How far past a platform's visible edge Fig's center can be and still stand on it.
+    platformGraceTiles: 0.1
   },
   coins: {
     spawnChancePerSecond: 0.7875,
@@ -861,27 +795,10 @@ export const GAME_CONFIG = {
   }
 };
 
-GAME_CONFIG.movingEntities.profiles.car1 = scaleCollisionProfile(
-  scaleRenderProfile(GAME_CONFIG.movingEntities.profiles.car1, MOVING_ENTITY_TUNING.carRenderScale),
-  MOVING_ENTITY_TUNING.carHitboxScale
-);
-GAME_CONFIG.movingEntities.profiles.car2 = scaleCollisionProfile(
-  scaleRenderProfile(GAME_CONFIG.movingEntities.profiles.car2, MOVING_ENTITY_TUNING.carRenderScale),
-  MOVING_ENTITY_TUNING.carHitboxScale
-);
-GAME_CONFIG.movingEntities.profiles.car3 = scaleCollisionProfile(
-  scaleRenderProfile(GAME_CONFIG.movingEntities.profiles.car3, MOVING_ENTITY_TUNING.carRenderScale),
-  MOVING_ENTITY_TUNING.carHitboxScale
-);
-
-GAME_CONFIG.movingEntities.profiles.maxTrain = {
-  ...scaleRenderProfile(GAME_CONFIG.movingEntities.profiles.maxTrain, MOVING_ENTITY_TUNING.trainRenderScale),
-  collision: {
-    ...GAME_CONFIG.movingEntities.profiles.maxTrain.collision,
-    width: GAME_CONFIG.movingEntities.profiles.maxTrain.collision.width * MOVING_ENTITY_TUNING.trainHitboxWidthMultiplier,
-    height: GAME_CONFIG.movingEntities.profiles.maxTrain.collision.height
-  }
-};
+for (const carKey of ['car1', 'car2', 'car3']) {
+  GAME_CONFIG.movingEntities.profiles[carKey] = scaleRenderProfile(GAME_CONFIG.movingEntities.profiles[carKey], MOVING_ENTITY_TUNING.carRenderScale);
+}
+GAME_CONFIG.movingEntities.profiles.maxTrain = scaleRenderProfile(GAME_CONFIG.movingEntities.profiles.maxTrain, MOVING_ENTITY_TUNING.trainRenderScale);
 
 GAME_CONFIG.props.render.portlandOregonSign = scalePropRenderProfile(
   GAME_CONFIG.props.render.portlandOregonSign,

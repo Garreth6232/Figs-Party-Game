@@ -50,9 +50,9 @@ class RunRng {
 }
 
 const DEFAULT_MOVING_PROFILE = {
-  render: { width: 1, height: 0.6, offsetX: 0, offsetY: 0 },
-  collision: { type: 'car', width: 1, height: 0.5, offsetX: 0, offsetY: 0 }
+  render: { width: 1, height: 0.6, offsetX: 0, offsetY: 0 }
 };
+const CAR_RENDER_KEYS = ['car1', 'car2', 'car3', 'bike1', 'scooter1'];
 
 
 export class Game {
@@ -79,7 +79,9 @@ export class Game {
     this.missingAssets = new Set();
     this.resize();
     this.loadSprites();
-    window.addEventListener('resize', () => this.resize());
+    // Watching the canvas itself also catches mobile URL-bar and orientation changes.
+    if (typeof ResizeObserver === 'function') new ResizeObserver(() => this.resize()).observe(this.canvas);
+    else window.addEventListener('resize', () => this.resize());
     this.reset();
   }
 
@@ -146,12 +148,16 @@ export class Game {
   resize() {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const rect = this.canvas.getBoundingClientRect();
-    this.canvas.width = rect.width * dpr;
-    this.canvas.height = rect.height * dpr;
+    if (this.worldWidth && (!rect.width || !rect.height)) return;
+    if (rect.width === this.worldWidth && rect.height === this.worldHeight && dpr === this.dpr) return;
+    this.dpr = dpr;
+    this.canvas.width = Math.round(rect.width * dpr);
+    this.canvas.height = Math.round(rect.height * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.worldWidth = rect.width;
     this.worldHeight = rect.height;
     this.tile = this.worldWidth / GAME_CONFIG.cols;
+    this.laneGradients = new Map();
     this.seedRain();
   }
 
@@ -190,6 +196,8 @@ export class Game {
       y: GAME_CONFIG.startY,
       drawX: Math.floor(GAME_CONFIG.cols / 2),
       drawY: GAME_CONFIG.startY,
+      hop: null,
+      hopLift: 0,
       stretch: 0,
       tilt: 0,
       facing: 'forward',
@@ -206,9 +214,10 @@ export class Game {
     this.coins = [];
     this.coinSpawnTimer = 0;
     this.particles = [];
-    this.nearMisses = new Set();
     this.lastNearMissAt = 0;
     this.lastMoveAt = 0;
+    this.queuedMove = null;
+    this.pruneTimer = 0;
     this.time = 0;
     this.superJumpVisualTimer = 0;
     this.superJumpState = null;
@@ -275,29 +284,48 @@ export class Game {
   move(dir) {
     if (this.state !== GAME_STATES.PLAYING) return;
     if (this.superJumpState?.active && GAME_CONFIG.superJump.inputLocked) return;
+    this.queuedMove = { dir, at: performance.now() };
+    this.processQueuedMove();
+  }
 
+  // Moves pressed during the hop cooldown wait briefly instead of being dropped.
+  processQueuedMove() {
+    const queued = this.queuedMove;
+    if (!queued) return;
+    const now = performance.now();
+    if (now - queued.at > GAME_CONFIG.movement.inputBufferMs) {
+      this.queuedMove = null;
+      return;
+    }
+    if (now - this.lastMoveAt < this.getCurrentMoveCooldown()) return;
+    this.queuedMove = null;
+    this.performMove(queued.dir, now);
+  }
+
+  performMove(dir, now) {
     const facingMap = { up: 'back', down: 'forward', left: 'left', right: 'right' };
     this.player.facing = facingMap[dir] ?? this.player.facing;
 
-    const now = performance.now();
-    if (now - this.lastMoveAt < this.getCurrentMoveCooldown()) return;
-
-    let nx = this.player.x;
+    let nx = this.player.fx;
     let ny = this.player.y;
     if (dir === 'up') ny += 1;
     if (dir === 'down') ny -= 1;
     if (dir === 'left') nx -= 1;
     if (dir === 'right') nx += 1;
-    nx = clamp(nx, 0, GAME_CONFIG.cols - 1);
     ny = Math.max(-2, ny);
-    if (nx === this.player.x && ny === this.player.y) return;
+    this.ensureLane(ny);
+    // On the river Fig keeps her exact spot so she lands where she is looking; elsewhere she snaps to the grid.
+    if (this.laneCache.get(ny)?.type !== 'water') nx = clamp(Math.round(nx), 0, GAME_CONFIG.cols - 1);
+    else if (nx < -0.49 || nx > GAME_CONFIG.cols - 0.51) nx = this.player.fx;
+    if (nx === this.player.fx && ny === this.player.y) return;
 
-    const dx = nx - this.player.x;
-    this.player.x = nx;
+    const dx = nx - this.player.fx;
+    this.player.hop = { fromX: this.player.drawX, fromY: this.player.drawY, elapsed: 0 };
+    this.player.x = clamp(Math.round(nx), 0, GAME_CONFIG.cols - 1);
     this.player.fx = nx;
     this.player.y = ny;
     this.attachedPlatformId = null;
-    this.player.tilt = dx * 0.2;
+    this.player.tilt = Math.sign(dx) * 0.2;
     this.player.stretch = 0.15;
     this.spawnHopParticles();
     this.audio.play('hop');
@@ -326,6 +354,9 @@ export class Game {
 
     this.player.facing = 'back';
     this.player.visualState = 'superJump';
+    this.player.hop = null;
+    this.player.hopLift = 0;
+    this.queuedMove = null;
     this.superJumpVisualTimer = totalDuration;
     this.attachedPlatformId = null;
     this.triggerScreenShake({ intensity: GAME_CONFIG.superJump.cameraPunch, duration: 0.14 });
@@ -435,6 +466,7 @@ export class Game {
     this.player.visualState = 'normal';
     this.superJumpVisualTimer = 0;
     this.superJumpState = null;
+    this.snapToNearbyPlatform();
     this.spawnBurst('#d9bd70', 24);
     this.spawnBurst('#9fb8aa', 10);
 
@@ -444,79 +476,145 @@ export class Game {
 
   findSafeLandingSpot(targetY) {
     const scanDepth = 10;
-    for (let y = targetY; y >= Math.max(this.player.y + 1, targetY - scanDepth); y -= 1) {
+    const lowestY = Math.max(this.player.y + 1, targetY - scanDepth);
+    // Traffic keeps moving during the 2.5s jump, so grass is the only landing that stays safe.
+    for (let y = targetY; y >= lowestY; y -= 1) {
       this.ensureLane(y);
-      const lane = this.laneCache.get(y);
-      if (!lane) continue;
-      if (lane.type === 'grass') return { x: this.player.x, y };
-      if (lane.type === 'road' && !this.hasBlockingHazard(this.player.x + 0.5, y, 0.55)) return { x: this.player.x, y };
-      if (lane.type === 'water') {
-        const platform = this.findPlatformUnderPoint(this.player.x + 0.5, y);
-        if (platform) return { x: clamp(Math.floor(platform.x), 0, GAME_CONFIG.cols - 1), y };
-      }
+      if (this.laneCache.get(y)?.type === 'grass') return { x: this.player.x, y };
     }
-    return { x: this.player.x, y: Math.max(this.player.y + 1, targetY - scanDepth) };
+    for (let y = targetY; y >= lowestY; y -= 1) {
+      const lane = this.laneCache.get(y);
+      if (lane?.type === 'road' && !this.hasBlockingHazard(this.player.x + 0.5, y)) return { x: this.player.x, y };
+      if (lane?.type === 'water' && this.findPlatformUnderPoint(this.player.x + 0.5, y)) return { x: this.player.x, y };
+    }
+    return { x: this.player.x, y: lowestY };
   }
 
-  hasBlockingHazard(centerX, y, padding = 0.8) {
-    return this.hazards.some((h) => {
-      if (h.y !== y) return false;
-      const profile = this.getMovingProfile(h.type);
-      return Math.abs(this.getMovingCenterX(h, profile) - centerX) < (profile.collision.width ?? h.w) * 0.5 + padding;
-    });
+  // On landing in the river, step onto the nearest platform within reach.
+  snapToNearbyPlatform() {
+    if (this.laneCache.get(this.player.y)?.type !== 'water') return;
+    if (this.findPlatformUnderPoint(this.player.fx + 0.5, this.player.y)) return;
+    const nearest = this.platforms
+      .filter((platform) => platform.y === this.player.y && platform.x > 0 && platform.x < GAME_CONFIG.cols)
+      .sort((a, b) => Math.abs(a.x - this.player.fx - 0.5) - Math.abs(b.x - this.player.fx - 0.5))[0];
+    if (!nearest || Math.abs(nearest.x - this.player.fx - 0.5) > 1.5) return;
+    this.player.fx = clamp(nearest.x - 0.5, 0, GAME_CONFIG.cols - 1);
+    this.player.x = Math.round(this.player.fx);
+    this.player.drawX = this.player.fx;
+  }
+
+  hasBlockingHazard(centerX, y, padding = 0.55) {
+    return this.hazards.some((h) => h.y === y && Math.abs(h.x - centerX) < this.getVisibleLengthTiles(h.type) / 2 + padding);
   }
 
   getMovingProfile(type) {
     return GAME_CONFIG.movingEntities.profiles[type] ?? DEFAULT_MOVING_PROFILE;
   }
 
-  getMovingCenterX(entity, profile) {
-    if (entity.motionAxis === 'y') return entity.x + (profile.collision.offsetX ?? 0);
-    return entity.x + (profile.collision.offsetX ?? 0);
+  getMovingDrawRect(entity, profile = this.getMovingProfile(entity.type)) {
+    const { render } = profile;
+    const centerX = (entity.x + (render.offsetX ?? 0)) * this.tile;
+    const centerY = this.worldToScreen(0, entity.y).y + this.tile * (0.5 + (render.offsetY ?? 0));
+    const width = render.width * this.tile;
+    const height = render.height * this.tile;
+    return { x: centerX - width / 2, y: centerY - height / 2, width, height };
   }
 
-  getMovingCenterY(entity, profile, mode = 'collision') {
-    const laneScreen = this.worldToScreen(0, entity.y).y;
-    const offsetY = profile[mode]?.offsetY ?? 0;
-    return laneScreen + this.tile * (0.5 + offsetY);
+  getRuntimeRenderScale(renderProfileKey) {
+    if (renderProfileKey === 'player') return this.runtimeRenderScale.player;
+    if (renderProfileKey === 'maxTrain') return this.runtimeRenderScale.train;
+    if (CAR_RENDER_KEYS.includes(renderProfileKey)) return this.runtimeRenderScale.car;
+    return 1;
   }
 
-  getMovingDrawRect(entity, profile) {
-    const centerX = entity.x + (profile.render.offsetX ?? 0);
-    const centerY = this.getMovingCenterY(entity, profile, 'render');
-    const width = profile.render.width * this.tile;
-    const height = profile.render.height * this.tile;
-    return { x: centerX * this.tile - width / 2, y: centerY - height / 2, width, height };
-  }
-
-  drawSpriteWithRenderProfile(image, targetRect, renderProfileKey) {
-    if (!image?.complete || image.naturalWidth === 0 || image.naturalHeight === 0) return false;
+  // The exact screen rectangle a sprite is drawn into. Hitboxes use the same rectangle.
+  getSpriteRect(targetRect, renderProfileKey) {
     const renderProfile = GAME_CONFIG.renderProfiles[renderProfileKey] ?? {};
-    const crop = renderProfile.crop ?? {};
+    const runtimeScale = this.getRuntimeRenderScale(renderProfileKey);
+    const width = targetRect.width * (renderProfile.scaleX ?? 1) * runtimeScale;
+    const height = targetRect.height * (renderProfile.scaleY ?? 1) * runtimeScale;
+    const anchor = renderProfile.anchor ?? 'center';
+    const baseX = anchor === 'topleft' ? targetRect.x : targetRect.x + (targetRect.width - width) / 2;
+    const baseY = anchor === 'topleft' ? targetRect.y : targetRect.y + (targetRect.height - height) / 2;
+    return {
+      x: baseX + (renderProfile.offsetX ?? 0) * this.tile,
+      y: baseY + (renderProfile.offsetY ?? 0) * this.tile,
+      width,
+      height
+    };
+  }
+
+  drawSpriteWithRenderProfile(image, targetRect, renderProfileKey, { flipX = false } = {}) {
+    if (!image?.complete || image.naturalWidth === 0 || image.naturalHeight === 0) return false;
+    const crop = GAME_CONFIG.renderProfiles[renderProfileKey]?.crop ?? {};
     const sx = image.naturalWidth * (crop.left ?? 0);
     const sy = image.naturalHeight * (crop.top ?? 0);
     const sw = image.naturalWidth * (1 - (crop.left ?? 0) - (crop.right ?? 0));
     const sh = image.naturalHeight * (1 - (crop.top ?? 0) - (crop.bottom ?? 0));
     if (sw <= 0 || sh <= 0) return false;
 
-    const runtimeScale =
-      renderProfileKey === 'player'
-        ? this.runtimeRenderScale.player
-        : renderProfileKey === 'maxTrain'
-          ? this.runtimeRenderScale.train
-          : ['car1', 'car2', 'car3', 'bike1', 'scooter1'].includes(renderProfileKey)
-            ? this.runtimeRenderScale.car
-            : 1;
-    const drawWidth = targetRect.width * (renderProfile.scaleX ?? 1) * runtimeScale;
-    const drawHeight = targetRect.height * (renderProfile.scaleY ?? 1) * runtimeScale;
-    const anchor = renderProfile.anchor ?? 'center';
-    const baseX = anchor === 'topleft' ? targetRect.x : targetRect.x + (targetRect.width - drawWidth) / 2;
-    const baseY = anchor === 'topleft' ? targetRect.y : targetRect.y + (targetRect.height - drawHeight) / 2;
-    const dx = baseX + (renderProfile.offsetX ?? 0) * this.tile;
-    const dy = baseY + (renderProfile.offsetY ?? 0) * this.tile;
-
-    this.ctx.drawImage(image, sx, sy, sw, sh, dx, dy, drawWidth, drawHeight);
+    const rect = this.getSpriteRect(targetRect, renderProfileKey);
+    if (flipX) {
+      this.ctx.save();
+      this.ctx.translate(rect.x + rect.width, rect.y);
+      this.ctx.scale(-1, 1);
+      this.ctx.drawImage(image, sx, sy, sw, sh, 0, 0, rect.width, rect.height);
+      this.ctx.restore();
+    } else {
+      this.ctx.drawImage(image, sx, sy, sw, sh, rect.x, rect.y, rect.width, rect.height);
+    }
     return true;
+  }
+
+  getEntitySprite(type) {
+    return this.vehicleSprites[type] ?? this.hazardSprites[type];
+  }
+
+  isEntityFlipped(entity, profile = this.getMovingProfile(entity.type)) {
+    return Boolean(profile.facesLeft) && entity.motionAxis !== 'y' && entity.dir > 0;
+  }
+
+  getEntityShape(entity) {
+    const profile = this.getMovingProfile(entity.type);
+    return {
+      ...this.getSpriteRect(this.getMovingDrawRect(entity, profile), entity.type),
+      mask: this.collisionSystem.getMask(this.getEntitySprite(entity.type), GAME_CONFIG.renderProfiles[entity.type]?.crop),
+      flipX: this.isEntityFlipped(entity, profile)
+    };
+  }
+
+  // Length of the visible part of a sprite, in tiles. Used to space traffic by what you can see.
+  getVisibleLengthTiles(type) {
+    const profile = this.getMovingProfile(type);
+    const renderProfile = GAME_CONFIG.renderProfiles[type] ?? {};
+    const mask = this.collisionSystem.getMask(this.getEntitySprite(type), renderProfile.crop);
+    const width = profile.render.width * (renderProfile.scaleX ?? 1) * this.getRuntimeRenderScale(type);
+    return width * (mask.maxU - mask.minU);
+  }
+
+  getPlayerSprite() {
+    return this.player.visualState === 'superJump' ? this.playerSprites.superJump : this.playerSprites[this.player.facing];
+  }
+
+  getPlayerRect(drawX, drawY, stretch = 0) {
+    const pos = this.worldToScreen(drawX, drawY);
+    const width = this.tile * (0.58 + stretch * 0.24);
+    const height = this.tile * (0.62 - stretch * 0.16);
+    return {
+      x: pos.x + (this.tile - width) / 2,
+      y: pos.y + (this.tile - height) * (0.5 + GAME_CONFIG.alignment.player.renderOffsetY),
+      width,
+      height
+    };
+  }
+
+  // Fig's hitbox follows where she is drawn (mid-hop too), minus the squash-and-stretch.
+  getPlayerShape() {
+    return {
+      ...this.getSpriteRect(this.getPlayerRect(this.player.drawX, this.player.drawY), 'player'),
+      mask: this.collisionSystem.getMask(this.getPlayerSprite(), GAME_CONFIG.renderProfiles.player.crop),
+      scale: GAME_CONFIG.collisions.playerForgiveness
+    };
   }
 
   handleProgressScore() {
@@ -721,16 +819,6 @@ export class Game {
     return props;
   }
 
-  laneSupportsHazards(lane) {
-    const gameplayType = this.getLaneGameplayType(lane);
-    return this.getLaneDefinition(gameplayType).allowedHazards.length > 0;
-  }
-
-  laneSupportsPlatforms(lane) {
-    const gameplayType = this.getLaneGameplayType(lane);
-    return this.getLaneDefinition(gameplayType).allowedPlatforms.length > 0;
-  }
-
   getBridgePlayableColumns() {
     const laneCount = clamp(Math.round(GAME_CONFIG.bridgeEncounter.laneCount), 1, GAME_CONFIG.cols);
     const start = Math.floor((GAME_CONFIG.cols - laneCount) / 2);
@@ -821,12 +909,9 @@ export class Game {
     if (this.laneCache.has(y)) return;
     const lane = this.terrainSystem.createLane(y, this.score);
     lane.decorProps = this.generateLaneProps(lane);
-    if (lane.type === 'water') {
-      const platformW = this.getMovingProfile(lane.platformType).render.width;
-      lane.speed *= this.runtimeRiverDensity;
-      const maxIntervalByGap = GAME_CONFIG.riverPlatforms.maxGapSeconds - platformW / lane.speed;
-      lane.interval = clamp(lane.interval, GAME_CONFIG.riverPlatforms.minInterval, Math.max(GAME_CONFIG.riverPlatforms.minInterval, maxIntervalByGap));
-      this.seedWaterLanePlatforms(lane);
+    if (lane.type === 'water' && GAME_CONFIG.riverPlatforms.alternateDirections) {
+      const neighbor = [this.laneCache.get(y - 1), this.laneCache.get(y + 1)].find((other) => other?.type === 'water');
+      if (neighbor) lane.direction = -neighbor.direction;
     }
     if (lane.type === 'road') lane.speed *= this.runtimeTrafficSpeedMultiplier;
     if (lane.type === 'rail') lane.warningLead = this.runtimeTrainWarningLead;
@@ -835,56 +920,157 @@ export class Game {
       if (encounterState && !encounterState.encounter) encounterState.encounter = lane.bridgeEncounter;
     }
     this.laneCache.set(y, lane);
+    if (lane.type === 'road' || lane.type === 'water') this.initFlowLane(lane);
     this.terrainSystem.updateConnectedContextForLane(y, this.laneCache);
     this.terrainSystem.updateConnectedContextForLane(y - 1, this.laneCache);
     this.terrainSystem.updateConnectedContextForLane(y + 1, this.laneCache);
   }
 
-  seedWaterLanePlatforms(lane) {
-    const desiredCount = lane.seedPlatformCount ?? GAME_CONFIG.riverPlatforms.minLanePlatformCount;
-    const count = Math.max(1, Math.round(desiredCount * this.runtimeRiverDensity));
-    const baseSpacing = GAME_CONFIG.cols / count;
-    const laneJitter = ((hash01(this.worldSeed * 7.17 + lane.y * 0.83) - 0.5) * baseSpacing * 0.65);
-    for (let i = 0; i < count; i += 1) {
-      const perPlatformJitter = (hash01(this.worldSeed * 8.31 + lane.y * 0.57 + i * 3.11) - 0.5) * baseSpacing * 0.25;
-      const spacing = i * baseSpacing + laneJitter + perPlatformJitter;
-      const x = lane.direction > 0 ? -1.2 + spacing : GAME_CONFIG.cols + 1.2 - spacing;
-      const profile = this.getMovingProfile(lane.platformType);
-      this.platforms.push({
-        id: this.nextPlatformId++,
-        type: lane.platformType,
-        x,
-        prevX: x,
-        y: lane.y,
-        dir: lane.direction,
-        speed: lane.speed,
-        w: profile.render.width,
-        h: profile.render.height
-      });
+  getDifficulty() {
+    const stage = this.score / GAME_CONFIG.difficultyRampEvery;
+    return clamp(1 + stage * 0.06 + Math.sqrt(stage) * 0.05, 1, 2.35);
+  }
+
+  // Roads and rivers are "flow lanes": entities enter at one edge and the next one is
+  // released once the last has moved its own half length + the planned gap + the next half length.
+  initFlowLane(lane) {
+    lane.flow = {
+      travel: 0,
+      spawnDistance: this.runRng.range(0, 3),
+      nextType: this.pickFlowEntityType(lane),
+      platoonLeft: 0,
+      alternate: false,
+      convoyNext: false
+    };
+    // Run the lane forward one screen width so it is already populated when it scrolls into view.
+    this.advanceFlowLane(lane, GAME_CONFIG.cols + GAME_CONFIG.flowLanes.entryOffset * 2);
+  }
+
+  advanceFlowLane(lane, distance) {
+    const flow = lane.flow;
+    flow.travel += distance;
+    while (flow.travel >= flow.spawnDistance) {
+      flow.travel -= flow.spawnDistance;
+      const spawnedType = flow.nextType;
+      this.spawnFlowEntity(lane, spawnedType, flow.travel);
+      flow.nextType = this.pickFlowEntityType(lane);
+      const gap = lane.type === 'water' ? this.nextRiverGap(lane, flow) : this.nextRoadGap(lane, flow);
+      flow.spawnDistance = this.getVisibleLengthTiles(spawnedType) / 2 + gap + this.getVisibleLengthTiles(flow.nextType) / 2;
     }
   }
 
-  spawnHazard(lane) {
-    const gameplayType = this.getLaneGameplayType(lane);
-    const laneDef = this.getLaneDefinition(gameplayType);
-    if (laneDef.allowedHazards.length === 0) return;
-    const startX = lane.direction > 0 ? -1.4 : GAME_CONFIG.cols + 1.4;
-    const spawnableHazards = laneDef.allowedHazards.filter((hazardType) => this.laneAllowsEntityType(lane, hazardType, 'hazards'));
-    if (spawnableHazards.length === 0) return;
-    const vehicleType = this.runRng.pick(spawnableHazards);
-    const profile = this.getMovingProfile(vehicleType);
-    const h = {
+  pickFlowEntityType(lane) {
+    if (lane.type === 'water') {
+      const pool = (lane.platformPool ?? []).filter((type) => this.laneAllowsEntityType(lane, type, 'platforms'));
+      if (!pool.length || this.runRng.next() < GAME_CONFIG.riverPlatforms.primaryTypeShare) return lane.platformType;
+      return this.runRng.pick(pool);
+    }
+    const spawnable = this.getLaneDefinition(lane.type).allowedHazards.filter((type) => this.laneAllowsEntityType(lane, type, 'hazards'));
+    return this.runRng.pick(spawnable);
+  }
+
+  // Smallest gap (tiles) that still leaves Fig a fair window to hop through at this speed.
+  getMinRoadGap(speed) {
+    const { clearWidth, minCrossWindow } = GAME_CONFIG.roadTraffic;
+    return clearWidth + speed * minCrossWindow;
+  }
+
+  nextRoadGap(lane, flow) {
+    const archetype = lane.trafficArchetype ?? {};
+    const minGap = this.getMinRoadGap(lane.speed);
+    const roll = (range, fallback) => (range ? this.runRng.range(range[0], range[1]) : fallback);
+    let gap;
+    if (archetype.platoonSize) {
+      if (flow.platoonLeft > 0) {
+        flow.platoonLeft -= 1;
+        return minGap * roll(archetype.platoonGapScale, 1.1);
+      }
+      flow.platoonLeft = this.runRng.int(archetype.platoonSize[0], archetype.platoonSize[1]) - 1;
+      gap = roll(archetype.gap, 5);
+    } else if (archetype.altGap) {
+      flow.alternate = !flow.alternate;
+      gap = roll(flow.alternate ? archetype.altGap : archetype.gap, 3);
+    } else {
+      gap = roll(archetype.gap, 3);
+    }
+    const squeeze = 1 + (this.getDifficulty() - 1) * GAME_CONFIG.roadTraffic.difficultyGapSqueeze;
+    return Math.max(minGap, gap / squeeze);
+  }
+
+  nextRiverGap(lane, flow) {
+    const river = GAME_CONFIG.riverPlatforms;
+    const archetype = lane.riverArchetype ?? {};
+    let gap;
+    if (flow.convoyNext) {
+      flow.convoyNext = false;
+      gap = this.runRng.range(river.minGap, river.minGap + 0.2);
+    } else {
+      gap = archetype.gap ? this.runRng.range(archetype.gap[0], archetype.gap[1]) : 1.2;
+      flow.convoyNext = this.runRng.next() < (archetype.convoyChance ?? 0);
+      gap *= (1 + (this.getDifficulty() - 1) * river.difficultyGapStretch) / this.runtimeRiverDensity;
+    }
+    const maxGap = Math.max(river.minGap, Math.min(river.maxGap, lane.speed * river.maxGapSeconds));
+    return clamp(gap, river.minGap, maxGap);
+  }
+
+  spawnFlowEntity(lane, type, offset = 0) {
+    const entryOffset = GAME_CONFIG.flowLanes.entryOffset;
+    const startX = lane.direction > 0 ? -entryOffset : GAME_CONFIG.cols + entryOffset;
+    const x = startX + lane.direction * offset;
+    const entity = { id: 0, type, x, prevX: x, y: lane.y, dir: lane.direction, speed: lane.speed };
+    if (lane.type === 'water') {
+      entity.id = this.nextPlatformId++;
+      this.platforms.push(entity);
+    } else {
+      entity.id = this.nextHazardId++;
+      this.hazards.push(entity);
+    }
+  }
+
+  spawnTrain(lane) {
+    if (!this.laneAllowsEntityType(lane, 'maxTrain', 'hazards')) return;
+    // Start fully off screen so the train never pops in.
+    const halfLength = this.getMovingProfile('maxTrain').render.width / 2 + 0.3;
+    const startX = lane.direction > 0 ? -halfLength : GAME_CONFIG.cols + halfLength;
+    this.hazards.push({
       id: this.nextHazardId++,
-      type: vehicleType,
+      type: 'maxTrain',
       x: startX,
       prevX: startX,
       y: lane.y,
       dir: lane.direction,
-      speed: lane.speed,
-      w: profile.render.width,
-      h: profile.render.height
-    };
-    this.hazards.push(h);
+      speed: lane.speed
+    });
+  }
+
+  updateRailLane(lane, dt, difficulty) {
+    lane.timer += dt;
+    const interval = Math.max(3.35, lane.interval / difficulty);
+    lane.warningActive = interval - lane.timer <= lane.warningLead;
+    this.trainWarnings.set(lane.y, {
+      active: lane.warningActive,
+      phase: Math.sin(this.time * GAME_CONFIG.trainWarning.flashHz * Math.PI * 2)
+    });
+    if (lane.timer >= interval) {
+      lane.timer = 0;
+      lane.warningActive = false;
+      this.spawnTrain(lane);
+    }
+  }
+
+  // Only lanes near the camera move; lanes further ahead are pre-filled and wait their turn.
+  getSimulationRange() {
+    const rowsOnScreen = Math.ceil(this.worldHeight / this.tile);
+    return { min: Math.floor(this.cameraY) - 3, max: Math.ceil(this.cameraY) + rowsOnScreen + 4 };
+  }
+
+  pruneLanesBehind() {
+    const minY = Math.floor(Math.min(this.player.y, this.cameraY)) - 12;
+    for (const y of this.laneCache.keys()) {
+      if (y >= minY) continue;
+      this.laneCache.delete(y);
+      this.trainWarnings.delete(y);
+    }
   }
 
   spawnBridgeHazard(lane, encounterState) {
@@ -897,7 +1083,6 @@ export class Game {
     const candidates = playableColumns.filter((col) => col !== encounterState.lastSpawnLane);
     const spawnColumn = this.runRng.pick(candidates.length ? candidates : playableColumns);
     const vehicleType = this.runRng.pick(spawnableHazards);
-    const profile = this.getMovingProfile(vehicleType);
     const bridgeEncounter = lane.bridgeEncounter;
     const spawnAtBridgeEnd = GAME_CONFIG.bridgeEncounter.trafficDirection === 'down';
     const spawnY = spawnAtBridgeEnd
@@ -915,9 +1100,7 @@ export class Game {
       dir: spawnDirection,
       speed: lane.speed,
       motionAxis: 'y',
-      encounterId: bridgeEncounter?.id ?? null,
-      w: profile.render.width,
-      h: profile.render.height
+      encounterId: bridgeEncounter?.id ?? null
     });
     encounterState.lastSpawnLane = spawnColumn;
   }
@@ -969,29 +1152,6 @@ export class Game {
     if (encounterState) encounterState.minimumPicklesSeeded = true;
   }
 
-  spawnPlatform(lane) {
-    const gameplayType = this.getLaneGameplayType(lane);
-    const laneDef = this.getLaneDefinition(gameplayType);
-    if (laneDef.allowedPlatforms.length === 0) return;
-    const spawnablePlatforms = laneDef.allowedPlatforms.filter((platformType) => this.laneAllowsEntityType(lane, platformType, 'platforms'));
-    if (spawnablePlatforms.length === 0) return;
-    const lanePlatformType = lane.platformType ?? this.runRng.pick(spawnablePlatforms);
-    const platformType = this.laneAllowsEntityType(lane, lanePlatformType, 'platforms') ? lanePlatformType : this.runRng.pick(spawnablePlatforms);
-    const startX = lane.direction > 0 ? -1.2 : GAME_CONFIG.cols + 1.2;
-    const profile = this.getMovingProfile(platformType);
-    this.platforms.push({
-      id: this.nextPlatformId++,
-      type: platformType,
-      x: startX,
-      prevX: startX,
-      y: lane.y,
-      dir: lane.direction,
-      speed: lane.speed,
-      w: profile.render.width,
-      h: profile.render.height
-    });
-  }
-
   spawnCoin() {
     if (this.coins.length >= GAME_CONFIG.coins.maxActive) return;
     const playerOnBridge = this.getBridgeEncounterStateByPlayerLane().lane?.type === 'bridgeEncounter';
@@ -1017,11 +1177,7 @@ export class Game {
   }
 
   collectCoinAtPlayer() {
-    const playerEntity = this.getPlayerCollisionEntity();
-    const coinIndex = this.coins.findIndex((coin) => {
-      const coinEntity = this.getCoinCollisionEntity(coin);
-      return this.collisionSystem.narrowPhase(playerEntity, 'player', this.player.facing, coinEntity, 'collectible', 'forward', this.tile);
-    });
+    const coinIndex = this.coins.findIndex((coin) => coin.y === this.player.y && Math.abs(coin.x - this.player.fx) < 0.6);
     if (coinIndex < 0) return;
 
     this.coins.splice(coinIndex, 1);
@@ -1116,9 +1272,8 @@ export class Game {
     if (this.superJumpState?.active) {
       this.updateSuperJump(dt);
     } else {
-      this.player.drawX += (this.player.fx - this.player.drawX) * 0.45;
-      this.player.drawY += (this.player.y - this.player.drawY) * 0.34;
-      this.player.tilt *= 0.86;
+      this.updatePlayerHop(dt);
+      this.player.tilt *= Math.pow(0.86, dt * 60);
       this.player.stretch = Math.max(0, this.player.stretch - dt * 1.8);
       this.player.superJumpEnergy = 0;
       this.player.superJumpPhase = 'idle';
@@ -1132,39 +1287,28 @@ export class Game {
 
     if (this.state !== GAME_STATES.PLAYING) return;
 
+    this.processQueuedMove();
     this.updateBridgeEncounterActivation();
 
-    this.cameraY += (this.player.y - this.runtimeCameraOffsetRows - this.cameraY) * GAME_CONFIG.cameraLerp;
+    const cameraFollow = 1 - Math.pow(1 - GAME_CONFIG.cameraLerp, dt * 60);
+    this.cameraY += (this.player.y - this.runtimeCameraOffsetRows - this.cameraY) * cameraFollow;
 
-    const stage = this.score / GAME_CONFIG.difficultyRampEvery;
-    const difficulty = clamp(1 + stage * 0.06 + Math.sqrt(stage) * 0.05, 1, 2.35);
+    const difficulty = this.getDifficulty();
+    const active = this.getSimulationRange();
+    const isActiveRow = (y) => y >= active.min && y <= active.max;
 
     for (const lane of this.laneCache.values()) {
-      if (lane.type === 'bridgeEncounter') continue;
-      if (!this.laneSupportsHazards(lane) && !this.laneSupportsPlatforms(lane)) continue;
-      lane.timer += dt;
-      let minInterval = 1.1;
-      if (this.laneSupportsPlatforms(lane)) minInterval = GAME_CONFIG.riverPlatforms.minInterval;
-      if (lane.type === 'rail') minInterval = 3.35;
-      const interval = Math.max(minInterval, lane.interval / difficulty);
-
-      if (lane.type === 'rail') {
-        const untilSpawn = interval - lane.timer;
-        lane.warningActive = untilSpawn <= lane.warningLead;
-        this.trainWarnings.set(lane.y, {
-          active: lane.warningActive,
-          phase: Math.sin(this.time * GAME_CONFIG.trainWarning.flashHz * Math.PI * 2)
-        });
-      }
-
-      if (lane.timer >= interval) {
-        lane.timer = 0;
-        lane.warningActive = false;
-        if (this.laneSupportsPlatforms(lane)) this.spawnPlatform(lane);
-        else if (this.laneSupportsHazards(lane)) this.spawnHazard(lane);
-      }
+      if (!isActiveRow(lane.y)) continue;
+      if (lane.flow) this.advanceFlowLane(lane, lane.speed * dt);
+      else if (lane.type === 'rail') this.updateRailLane(lane, dt, difficulty);
     }
     this.updateBridgeEncounterTraffic(dt, difficulty);
+
+    this.pruneTimer += dt;
+    if (this.pruneTimer >= 0.5) {
+      this.pruneTimer = 0;
+      this.pruneLanesBehind();
+    }
 
     this.coinSpawnTimer += dt;
     if (this.coinSpawnTimer >= 1) {
@@ -1175,6 +1319,7 @@ export class Game {
     for (const hazard of this.hazards) {
       hazard.prevX = hazard.x;
       hazard.prevY = hazard.y;
+      if (hazard.motionAxis !== 'y' && !isActiveRow(hazard.y)) continue;
       if (hazard.motionAxis === 'y') hazard.y += hazard.speed * hazard.dir * dt;
       else hazard.x += hazard.speed * hazard.dir * dt;
       this.maybeTriggerTrainPassShake(hazard);
@@ -1191,7 +1336,7 @@ export class Game {
 
     for (const platform of this.platforms) {
       platform.prevX = platform.x;
-      platform.x += platform.speed * platform.dir * dt;
+      if (isActiveRow(platform.y)) platform.x += platform.speed * platform.dir * dt;
     }
     this.platforms = this.platforms.filter((p) => this.isPlatformCompatibleWithLane(p) && p.x > -5 && p.x < GAME_CONFIG.cols + 5);
 
@@ -1201,7 +1346,7 @@ export class Game {
     this.coins = this.coins.filter((coin) => coin.y >= minCoinY);
 
     if (!this.superJumpState?.active) {
-      this.handleCollisions(dt);
+      this.handleCollisions();
       this.collectCoinAtPlayer();
     }
 
@@ -1228,25 +1373,32 @@ export class Game {
     }
   }
 
+  updatePlayerHop(dt) {
+    const { player } = this;
+    const { hop } = player;
+    if (!hop) {
+      player.drawX = player.fx;
+      player.drawY = player.y;
+      player.hopLift = 0;
+      return;
+    }
+    hop.elapsed += dt;
+    const progress = Math.min(1, hop.elapsed / GAME_CONFIG.movement.hopDuration);
+    const eased = easeOutCubic(progress);
+    player.drawX = lerp(hop.fromX, player.fx, eased);
+    player.drawY = lerp(hop.fromY, player.y, eased);
+    player.hopLift = Math.sin(progress * Math.PI) * GAME_CONFIG.movement.hopHeight;
+    if (progress >= 1) player.hop = null;
+  }
+
+  // x is Fig's center in tiles. She stands on a platform if her center is over its visible pixels.
   findPlatformUnderPoint(x, y) {
+    const grace = GAME_CONFIG.collisions.platformGraceTiles * this.tile;
+    const px = x * this.tile;
     return this.platforms.find((platform) => {
       if (platform.y !== y) return false;
-      const entity = this.getPlatformCollisionEntity(platform);
-      const broad = this.collisionSystem.getAABB(entity, 'platform', this.tile);
-      const kayakLandingPad = GAME_CONFIG.riverPlatforms;
-      const platformWidthPx = broad.right - broad.left;
-      const platformHeightPx = broad.bottom - broad.top;
-      const isKayak = platform.type === 'kayak1';
-      const extraCatchPxX = isKayak ? ((kayakLandingPad.kayakLandingPadWidthMultiplier - 1) * platformWidthPx) / 2 : 0;
-      const extraCatchPxY = isKayak ? ((kayakLandingPad.kayakLandingPadHeightMultiplier - 1) * platformHeightPx) / 2 : 0;
-      const laneScreen = this.worldToScreen(0, y).y;
-      const playerCenterY = laneScreen + this.tile * 0.5;
-      return (
-        x * this.tile >= broad.left - extraCatchPxX &&
-        x * this.tile <= broad.right + extraCatchPxX &&
-        playerCenterY >= broad.top - extraCatchPxY &&
-        playerCenterY <= broad.bottom + extraCatchPxY
-      );
+      const span = this.collisionSystem.getVisibleSpan(this.getEntityShape(platform));
+      return px >= span.left - grace && px <= span.right + grace;
     });
   }
 
@@ -1273,94 +1425,42 @@ export class Game {
     this.player.fx += rideStep;
     this.player.fx = clamp(this.player.fx, -0.49, GAME_CONFIG.cols - 0.51);
     this.player.x = clamp(Math.round(this.player.fx), 0, GAME_CONFIG.cols - 1);
+    if (!this.player.hop) this.player.drawX = this.player.fx;
 
     if (this.player.fx <= -0.45 || this.player.fx >= GAME_CONFIG.cols - 0.55) {
       this.kill(DEATH_CAUSES.OFF_PLATFORM);
     }
   }
 
-  getPlayerCollisionEntity() {
-    const laneScreen = this.worldToScreen(0, this.player.y).y;
-    const align = GAME_CONFIG.alignment.player;
-    return {
-      x: this.player.fx,
-      y: this.player.y,
-      w: GAME_CONFIG.collisions.profiles.player.width,
-      h: GAME_CONFIG.collisions.profiles.player.height,
-      screenY: laneScreen + this.tile * align.collisionOffsetY
-    };
-  }
-
-  getHazardCollisionEntity(hazard) {
-    const profile = this.getMovingProfile(hazard.type);
-    return {
-      ...hazard,
-      centerX: this.getMovingCenterX(hazard, profile),
-      prevCenterX: hazard.prevX + (profile.collision.offsetX ?? 0),
-      centerY: this.getMovingCenterY(hazard, profile, 'collision'),
-      w: profile.collision.width,
-      h: profile.collision.height
-    };
-  }
-
-  getPlatformCollisionEntity(platform) {
-    const profile = this.getMovingProfile(platform.type);
-    return {
-      ...platform,
-      centerX: this.getMovingCenterX(platform, profile),
-      prevCenterX: platform.prevX + (profile.collision.offsetX ?? 0),
-      centerY: this.getMovingCenterY(platform, profile, 'collision'),
-      w: profile.collision.width,
-      h: profile.collision.height
-    };
-  }
-
-  getCoinCollisionEntity(coin) {
-    const laneScreen = this.worldToScreen(0, coin.y).y;
-    return { ...coin, screenY: laneScreen + this.tile * GAME_CONFIG.alignment.collectible.collisionOffsetY };
-  }
-
-  handleCollisions(dt) {
+  handleCollisions() {
     const lane = this.laneCache.get(this.player.y);
     if (!lane) return;
+    const landed = !this.player.hop;
 
-    const playerEntity = this.getPlayerCollisionEntity();
-    if (lane.type === 'bridgeEncounter' && !this.isBridgePlayableColumn(this.player.x)) {
+    if (landed && lane.type === 'bridgeEncounter' && !this.isBridgePlayableColumn(this.player.x)) {
       this.kill(DEATH_CAUSES.RIVER);
       return;
     }
 
+    // Pixel-mask test between what Fig looks like and what each vehicle looks like, at their drawn positions.
+    const playerShape = this.getPlayerShape();
+    const playerCenterX = this.player.drawX + 0.5;
     for (const h of this.hazards) {
       if (h.motionAxis === 'y') {
-        if (Math.abs(h.x - (this.player.fx + 0.5)) > 0.9) continue;
-        if (Math.abs(h.y - this.player.y) > 1.25) continue;
-      } else if (Math.abs(h.y - this.player.y) > 0.25) continue;
-      const hazardEntity = this.getHazardCollisionEntity(h);
-      const playerBroad = this.collisionSystem.getAABB(playerEntity, 'player', this.tile);
-      const hazardBroad = this.collisionSystem.getAABB(hazardEntity, this.getMovingProfile(h.type).collision.type, this.tile, {
-        swept: true
-      });
-      if (!this.collisionSystem.broadPhase(playerBroad, hazardBroad)) continue;
+        if (Math.abs(h.x - playerCenterX) > 1.2 || Math.abs(h.y - this.player.drawY) > 1.6) continue;
+      } else if (Math.abs(h.y - this.player.drawY) >= 1) continue;
 
-      const hit = this.collisionSystem.narrowPhase(
-        playerEntity,
-        'player',
-        this.player.facing,
-        hazardEntity,
-        this.getMovingProfile(h.type).collision.type,
-        'forward',
-        this.tile
-      );
-      if (hit) {
+      if (this.collisionSystem.overlaps(playerShape, this.getEntityShape(h))) {
         this.kill(h.type === 'maxTrain' ? DEATH_CAUSES.TRAIN : DEATH_CAUSES.CAR);
         return;
       }
 
-      if (lane.type === 'road') {
-        const near = Math.abs(this.getMovingCenterX(h, this.getMovingProfile(h.type)) - (this.player.fx + 0.5));
+      if (lane.type === 'road' && h.y === this.player.y && !h.nearMissAwarded) {
+        // A vehicle that passes within a third of a tile of Fig without touching her.
+        const edgeGap = Math.abs(h.x - (this.player.fx + 0.5)) - this.getVisibleLengthTiles(h.type) / 2 - 0.25;
         const now = performance.now();
-        if (near < 0.65 && !this.nearMisses.has(h.id) && now - this.lastNearMissAt > 120) {
-          this.nearMisses.add(h.id);
+        if (edgeGap < 0.33 && now - this.lastNearMissAt > 120) {
+          h.nearMissAwarded = true;
           this.lastNearMissAt = now;
           this.score += 1;
           const bestPulse = this.updateBestIfNeeded();
@@ -1371,12 +1471,10 @@ export class Game {
       }
     }
 
-    if (lane.type === 'water') {
-      const platform = this.findPlatformUnderPoint(this.player.fx + 0.5, this.player.y);
-      if (!platform) {
-        this.attachedPlatformId = null;
-        this.kill(DEATH_CAUSES.RIVER);
-      }
+    // Water only counts once the hop has landed, so a platform arriving mid-hop still catches Fig.
+    if (landed && lane.type === 'water' && !this.findPlatformUnderPoint(this.player.fx + 0.5, this.player.y)) {
+      this.attachedPlatformId = null;
+      this.kill(DEATH_CAUSES.RIVER);
     }
   }
 
@@ -1394,9 +1492,8 @@ export class Game {
     if (hazard.type !== 'maxTrain' || hazard.didShake) return;
     if (Math.abs(hazard.y - this.player.y) > 6) return;
 
-    const profile = this.getMovingProfile(hazard.type);
-    const prevCenter = hazard.prevX + (profile.collision.offsetX ?? 0);
-    const currentCenter = hazard.x + (profile.collision.offsetX ?? 0);
+    const prevCenter = hazard.prevX;
+    const currentCenter = hazard.x;
     const playerCenter = this.player.fx + 0.5;
 
     const crossedPlayer =
@@ -1540,12 +1637,11 @@ export class Game {
     });
 
     const laneWorldY = laneIndex * this.tile;
-    const shadeTop = ctx.createLinearGradient(0, laneY, 0, laneY + laneHeight);
-    shadeTop.addColorStop(0, 'rgba(13, 26, 14, 0.26)');
-    shadeTop.addColorStop(0.5, 'rgba(55, 92, 50, 0.08)');
-    shadeTop.addColorStop(1, 'rgba(12, 24, 13, 0.2)');
-    ctx.fillStyle = shadeTop;
-    ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
+    this.fillLaneGradient('grassShade', [
+      [0, 'rgba(13, 26, 14, 0.26)'],
+      [0.5, 'rgba(55, 92, 50, 0.08)'],
+      [1, 'rgba(12, 24, 13, 0.2)']
+    ], laneY, laneHeight);
 
     const undulation = Math.sin((laneWorldY + this.time * 12) * grassStyle.undulationFreq) * grassStyle.undulationAlpha;
     const tonalAlpha = Math.max(0, grassStyle.tonalAlpha + undulation);
@@ -1571,12 +1667,11 @@ export class Game {
       fallbackColor: '#34576d'
     });
 
-    const overlay = ctx.createLinearGradient(0, laneY, 0, laneY + laneHeight);
-    overlay.addColorStop(0, 'rgba(16, 47, 66, 0.72)');
-    overlay.addColorStop(0.48, 'rgba(39, 102, 128, 0.2)');
-    overlay.addColorStop(1, 'rgba(13, 42, 60, 0.74)');
-    ctx.fillStyle = overlay;
-    ctx.fillRect(0, laneY, this.worldWidth, laneHeight);
+    this.fillLaneGradient('waterShade', [
+      [0, 'rgba(16, 47, 66, 0.72)'],
+      [0.48, 'rgba(39, 102, 128, 0.2)'],
+      [1, 'rgba(13, 42, 60, 0.74)']
+    ], laneY, laneHeight);
 
     const waveBase = laneY + laneHeight * 0.26;
     const waveAmp = laneHeight * 0.08;
@@ -1678,6 +1773,26 @@ export class Game {
     });
   }
 
+  // Lane gradients are built once per canvas size and shifted into place instead of rebuilt every frame.
+  fillLaneGradient(key, stops, laneY, laneHeight) {
+    let gradient = this.laneGradients.get(key);
+    if (!gradient) {
+      gradient = this.ctx.createLinearGradient(0, 0, 0, laneHeight);
+      for (const [offset, color] of stops) gradient.addColorStop(offset, color);
+      this.laneGradients.set(key, gradient);
+    }
+    this.ctx.save();
+    this.ctx.translate(0, laneY);
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(0, 0, this.worldWidth, laneHeight);
+    this.ctx.restore();
+  }
+
+  isRowOnScreen(y) {
+    const screenY = this.worldToScreen(0, y).y;
+    return screenY + this.tile * 2 >= 0 && screenY - this.tile <= this.worldHeight;
+  }
+
   drawConnectedLaneShading(lane, laneY, laneHeight, { capTop, capBottom }) {
     const ctx = this.ctx;
     const edgeHeight = Math.max(1, Math.round(laneHeight * 0.12));
@@ -1777,8 +1892,8 @@ export class Game {
   drawPlatforms() {
     const ctx = this.ctx;
     for (const p of this.platforms) {
-      const profile = this.getMovingProfile(p.type);
-      const { x, y, width, height } = this.getMovingDrawRect(p, profile);
+      if (!this.isRowOnScreen(p.y)) continue;
+      const { x, y, width, height } = this.getMovingDrawRect(p);
 
       const sprite = this.hazardSprites[p.type];
       if (this.drawSpriteWithRenderProfile(sprite, { x, y, width, height }, p.type)) {
@@ -1808,12 +1923,12 @@ export class Game {
   drawHazards() {
     const ctx = this.ctx;
     for (const h of this.hazards) {
+      if (!this.isRowOnScreen(h.y)) continue;
       const profile = this.getMovingProfile(h.type);
       const { x, y, width, height } = this.getMovingDrawRect(h, profile);
 
-      const spriteKey = h.type === 'maxTrain' ? 'maxTrain' : h.type;
-      const sprite = this.vehicleSprites[spriteKey];
-      if (this.drawSpriteWithRenderProfile(sprite, { x, y, width, height }, spriteKey)) {
+      const sprite = this.vehicleSprites[h.type];
+      if (this.drawSpriteWithRenderProfile(sprite, { x, y, width, height }, h.type, { flipX: this.isEntityFlipped(h, profile) })) {
         // image path drawn
       } else {
         if (h.type.startsWith('car')) {
@@ -1879,29 +1994,27 @@ export class Game {
 
   drawPlayer() {
     const ctx = this.ctx;
-    const pos = this.worldToScreen(this.player.drawX, this.player.drawY);
-    const w = this.tile * (0.58 + this.player.stretch * 0.24);
-    const h = this.tile * (0.62 - this.player.stretch * 0.16);
-    const x = pos.x + (this.tile - w) / 2;
-    const y = pos.y + (this.tile - h) * (0.5 + GAME_CONFIG.alignment.player.renderOffsetY);
+    const { drawX, drawY, hopLift, stretch } = this.player;
+    // The shadow stays on the ground while Fig lifts off it mid-hop.
+    const ground = this.getPlayerRect(drawX, drawY, stretch);
+    const { x, y, width: w, height: h } = hopLift ? this.getPlayerRect(drawX, drawY + hopLift, stretch) : ground;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath();
+    const shadowScale = (this.superJumpState?.active ? 0.7 : 1) * (1 - hopLift * 1.2);
+    ctx.ellipse(ground.x + w / 2, ground.y + h * 0.95, w * 0.4 * shadowScale, h * 0.15 * shadowScale, 0, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.save();
     ctx.translate(x + w / 2, y + h / 2);
     ctx.rotate(this.player.tilt);
     ctx.translate(-(x + w / 2), -(y + h / 2));
 
-    ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    ctx.beginPath();
-    const shadowScale = this.superJumpState?.active ? 0.7 : 1;
-    ctx.ellipse(x + w / 2, y + h * 0.95, w * 0.4 * shadowScale, h * 0.15 * shadowScale, 0, 0, Math.PI * 2);
-    ctx.fill();
-
     if (this.superJumpState?.active) {
       this.drawSuperJumpEnergy(x + w / 2, y + h * 0.48, w, h, this.player.superJumpEnergy ?? 0);
     }
 
-    const sprite = this.player.visualState === 'superJump' ? this.playerSprites.superJump : this.playerSprites[this.player.facing];
-    if (!this.drawSpriteWithRenderProfile(sprite, { x, y, width: w, height: h }, 'player')) {
+    if (!this.drawSpriteWithRenderProfile(this.getPlayerSprite(), { x, y, width: w, height: h }, 'player')) {
       ctx.fillStyle = '#f4a261';
       ctx.fillRect(x, y, w, h);
     }
@@ -1971,12 +2084,12 @@ export class Game {
     const ctx = this.ctx;
     ctx.strokeStyle = 'rgba(228, 236, 242, 0.23)';
     ctx.lineWidth = 1.2;
+    ctx.beginPath();
     for (const drop of this.rainDrops) {
-      ctx.beginPath();
       ctx.moveTo(drop.x, drop.y);
       ctx.lineTo(drop.x - 2, drop.y + drop.len);
-      ctx.stroke();
     }
+    ctx.stroke();
 
     ctx.fillStyle = 'rgba(41, 52, 59, 0.2)';
     ctx.fillRect(0, 0, this.worldWidth, this.worldHeight);
@@ -2005,45 +2118,28 @@ export class Game {
 
   drawCollisionDebug() {
     if (!this.collisionSystem.debugEnabled) return;
-    const debugOpacity = this.runtimeHitboxOpacity;
-    const withOpacity = (color, alpha) => color.replace(/0\.\d+\)$/, `${Math.max(0.05, Math.min(1, alpha * debugOpacity))})`);
-    // Toggle with the dev key in config (default: C) to visualize broad boxes, mask footprint, and ride zones.
-    const entries = [
-      { entity: this.getPlayerCollisionEntity(), type: 'player', orientation: this.player.facing, color: withOpacity('rgba(245, 219, 111, 0.7)', 0.7), showMask: true }
-    ];
-
+    const alpha = clamp(this.runtimeHitboxOpacity, 0.05, 1);
+    const color = (r, g, b) => `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    // Toggle with the dev key in config (default: C). Filled cells are the real pixel hitboxes;
+    // masks are filled near Fig only to keep the overlay cheap.
+    const nearPlayer = (y) => Math.abs(y - this.player.drawY) <= 2;
+    const entries = [{ shape: this.getPlayerShape(), color: color(245, 219, 111), showMask: true }];
     for (const h of this.hazards) {
-      const profile = this.getMovingProfile(h.type);
-      entries.push({
-        entity: this.getHazardCollisionEntity(h),
-        type: profile.collision.type,
-        color: withOpacity('rgba(238, 104, 104, 0.7)', 0.7),
-        swept: true,
-        showMask: false
-      });
+      if (!this.isRowOnScreen(h.y)) continue;
+      entries.push({ shape: this.getEntityShape(h), color: color(238, 104, 104), showMask: nearPlayer(h.y) });
     }
-
     for (const p of this.platforms) {
-      entries.push({
-        entity: this.getPlatformCollisionEntity(p),
-        type: 'platform',
-        color: p.id === this.attachedPlatformId ? withOpacity('rgba(107, 236, 146, 0.9)', 0.9) : withOpacity('rgba(111, 214, 170, 0.7)', 0.7),
-        showMask: false
-      });
+      if (!this.isRowOnScreen(p.y)) continue;
+      const attached = p.id === this.attachedPlatformId;
+      entries.push({ shape: this.getEntityShape(p), color: attached ? color(107, 236, 146) : color(111, 214, 170), showMask: nearPlayer(p.y) });
     }
+    this.collisionSystem.drawDebug(this.ctx, entries);
 
-    for (const coin of this.coins) {
-      entries.push({ entity: this.getCoinCollisionEntity(coin), type: 'collectible', color: withOpacity('rgba(255, 221, 111, 0.7)', 0.7), showMask: false });
+    // Fig's standing point on the river: her center must be over a platform's visible pixels.
+    if (this.laneCache.get(this.player.y)?.type === 'water') {
+      const pos = this.worldToScreen(this.player.fx + 0.5, this.player.y);
+      this.ctx.fillStyle = color(84, 172, 219);
+      this.ctx.fillRect(pos.x - 2, pos.y + this.tile * 0.2, 4, this.tile * 0.6);
     }
-
-    const lane = this.laneCache.get(this.player.y);
-    if (lane?.type === 'water') {
-      const waterY = this.worldToScreen(0, this.player.y).y;
-      this.ctx.strokeStyle = 'rgba(84, 172, 219, 0.8)';
-      this.ctx.lineWidth = 2;
-      this.ctx.strokeRect(0, waterY + 2, this.worldWidth, this.tile - 4);
-    }
-
-    this.collisionSystem.drawDebug(this.ctx, entries, this.tile);
   }
 }

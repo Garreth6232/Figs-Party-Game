@@ -212,6 +212,13 @@ const input = new InputManager({
 });
 input.bind();
 
+// Switching apps or tabs on a phone pauses the run instead of letting Fig get flattened off-screen.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden || game.state !== GAME_STATES.PLAYING) return;
+  game.togglePause();
+  ui.showPause(true);
+});
+
 let last = performance.now();
 let loopId = null;
 function loop(now) {

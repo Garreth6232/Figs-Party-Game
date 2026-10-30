@@ -48,6 +48,12 @@
       <main class="canvas-wrap" aria-label="Game board">
         <canvas id="gameCanvas" width="900" height="1400" aria-label="Game canvas"></canvas>
         <div id="warningFlash" class="warning-flash" aria-hidden="true"></div>
+        <div class="touch-controls" aria-label="Touch controls">
+          <button type="button" class="touch-btn" data-action="pause" aria-label="Pause">II</button>
+          <button id="touchSuperBtn" type="button" class="touch-btn touch-super" data-action="superjump" aria-label="Super jump" disabled>
+            Super <span id="touchSuperCount">0</span>
+          </button>
+        </div>
         <div id="toast" class="toast" aria-live="polite"></div>
 
         <section id="startScreen" class="overlay show" aria-labelledby="startTitle" aria-hidden="false">
@@ -57,10 +63,13 @@
               In this game you are Fig
             </p>
             <div class="controls-list" aria-label="Controls">
-              <p><kbd>WASD</kbd> / <kbd>Arrows</kbd> to move</p>
-              <p><kbd>J</kbd> or <kbd>Space</kbd> to use a Super Jump</p>
-              <p><kbd>P</kbd> or <kbd>Esc</kbd> to pause</p>
-              <p><kbd>I</kbd> opens the Info guide.</p>
+              <p class="keys-only"><kbd>WASD</kbd> / <kbd>Arrows</kbd> to move</p>
+              <p class="keys-only"><kbd>J</kbd> or <kbd>Space</kbd> to use a Super Jump</p>
+              <p class="keys-only"><kbd>P</kbd> or <kbd>Esc</kbd> to pause</p>
+              <p class="keys-only"><kbd>I</kbd> opens the Info guide.</p>
+              <p class="touch-only"><kbd>Tap</kbd> to hop forward</p>
+              <p class="touch-only"><kbd>Swipe</kbd> to hop in any direction</p>
+              <p class="touch-only"><kbd>Super</kbd> button launches a Super Jump</p>
               <p class="hint">Collect 5 pickles to charge 1 Super Jump (20-lane launch).</p>
             </div>
             <div class="menu-actions">
@@ -73,7 +82,7 @@
         <section id="pauseScreen" class="overlay hidden" aria-labelledby="pauseTitle" aria-hidden="true">
           <div class="card small" role="dialog" aria-modal="true">
             <h2 id="pauseTitle">Paused</h2>
-            <p>Take a breath. Press <kbd>P</kbd> to continue.</p>
+            <p>Take a breath.<span class="keys-only"> Press <kbd>P</kbd> to continue.</span></p>
             <div class="menu-actions">
               <button id="resumeBtn" class="primary" type="button">Resume</button>
             </div>
